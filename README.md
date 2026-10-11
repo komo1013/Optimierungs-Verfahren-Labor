@@ -16,13 +16,14 @@ This repository contains a custom-built closed 2D track generator and an optimiz
 
 ## How it works 
 
-We will start by creating a random closed spline curve. After that we will use a specific Optmaisathion Algorithm to determine The Least Amount of Pilers to hold The curve THat is needed
+We will start by creating a random closed spline curve. After that we will use a specific Optmization Algorithm to determine the least amount of ground anchors necessary to hold the curve.
 
 ## Used Tools 
 - Python
   - numpy
   - scipy
-  - ...
+  - gmesh
+  - splines
      
 <!--
   <<< Author notes: Step 1 >>>
