@@ -22,8 +22,9 @@ We will start by creating a random closed spline curve. After that we will use a
 - Python
   - numpy
   - scipy
-  - gmesh
+  - gmsh
   - splines
+  - matplotlib
      
 <!--
   <<< Author notes: Step 1 >>>
