@@ -87,11 +87,13 @@ def check_surrounding_points(spline, circle_center, radius, vertex, previous_seg
     #print(vertex)
     if(previous_segment):
         previous_times = np.arange(num_intervals)/num_intervals + vertex - 1
+        previous_times = np.append(previous_times, vertex)
     if(next_segment):
+
         next_times = np.arange(num_intervals)/num_intervals + vertex
     crossing_times = np.array([])
-    #print(previous_times)
-    print(next_times)
+    print(previous_times)
+    #print(next_times)
     for time in previous_times:
         if(time == previous_times[-1]) : continue
         if((np.linalg.norm(circle_center - spline.evaluate(time))<=circle_radius)!=(np.linalg.norm(circle_center - spline.evaluate(time + 1/num_intervals))<= circle_radius)):
@@ -128,7 +130,7 @@ if(len(np.where(inside_vertices == s1.grid[-2])[0])==0):
 
 crossing_times = np.array([])
 for vertex in inside_vertices:
-    crossing_times = np.append(crossing_times, check_surrounding_points(s1, anchor_point, circle_radius, vertex, previous_segment=vertex!=0, next_segment=vertex<MAX_KNOTS, num_intervals=EVALUATE_INTERVALS if vertex == MAX_KNOTS-1 else EVALUATE_INTERVALS*3))
+    crossing_times = np.append(crossing_times, check_surrounding_points(s1, anchor_point, circle_radius, vertex, previous_segment=vertex!=0, next_segment=vertex<MAX_KNOTS, num_intervals=EVALUATE_INTERVALS if vertex != MAX_KNOTS-1 else EVALUATE_INTERVALS*3))
 
 crossing_points = np.array(s1.evaluate(crossing_times))
 
