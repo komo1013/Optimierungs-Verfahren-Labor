@@ -3,16 +3,22 @@ import scipy as sp
 import gmsh
 import splines
 import matplotlib.pyplot as plt
+from intersect import intersection
 from helper import plot_spline_2d
 import random
 from numpy import pi as PI
 
 '''Defining global variables'''
-MAX_RADIUS= 7
-MIN_RADIUS = 2
-MAX_ANGLE = 3*PI/4
-MAX_KNOTS = 20
-MAX_DEVIATION = 10
+MAX_RADIUS= 7               # Maximum absolute distance one point on the track can be away from the previous point on the track
+MIN_RADIUS = 2              # Minimum absolute distance from one point on the track to the previous one
+MAX_ANGLE = 3*PI/4          # Maximum angle between the ingoing vector to one point and the outgoing vector from that point
+MAX_KNOTS = 20              # Number of points defining the track
+MAX_DEVIATION = 10          # Twice the maximum deviation, it gets centered around 0
+TRACK_HEIGHT = 3            # Height of the simulated track above the ground anchors
+MAX_CONNECTOR_LENGTH = 5    # Maximum allowed length for connections between ground anchors and points on the track
+EVALUATE_INTERVALS = 100    # Number of intervals used to approximate intersections between the spline and the connection-circle
+
+circle_radius = np.sqrt(MAX_CONNECTOR_LENGTH**2 - TRACK_HEIGHT**2)
 
 '''Defining functions'''
 
@@ -62,12 +68,32 @@ def get_random_track(debug_info = True, max_radius = MAX_RADIUS, min_radius = MI
     if(debug_info): print(vertices)
     return vertices
 
+def get_random_point_on_track(track, debug_info = True, number_knots = MAX_KNOTS):
+    random_progress = number_knots*random.random()
+    if(debug_info): print(random_progress)
+    random_point = track.evaluate(random_progress)
+    if(debug_info): print(random_point)
+    return random_point
+
+def get_random_segment(number_knots = MAX_KNOTS):
+    random_segment = (number_knots-1)*random.random()
+    return random_segment
 
 
 
 track = get_random_track(debug_info=False)
 s1 = splines.CatmullRom(track, endconditions='closed')
+
+point = get_random_point_on_track(s1, debug_info=False)
+is_inside = (np.linalg.norm(point - s1.evaluate(s1.grid), axis=1)) <= circle_radius
+inside_vertices = np.where(is_inside==True)
+
+
 fig, ax = plt.subplots()
+ax.axis('equal')
+circle = plt.Circle((point[0],point[1]),circle_radius,color='g',fill=False)
 #plt.plot(vertices)
 plot_spline_2d(s1, ax=ax,dots_per_second=30)
+ax.plot(point[0],point[1],'o')
+ax.add_patch(circle)
 plt.show()
