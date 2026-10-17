@@ -16,6 +16,7 @@ MAX_KNOTS = 20              # Number of points defining the track
 MAX_DEVIATION = 10          # Twice the maximum deviation, it gets centered around 0
 TRACK_HEIGHT = 3            # Height of the simulated track above the ground anchors
 MAX_CONNECTOR_LENGTH = 5    # Maximum allowed length for connections between ground anchors and points on the track
+CIRCLE_EPSILON = 0.2        # Arbitrary epsilon-value to also find vertices close to the anchor-circle
 EVALUATE_INTERVALS = 100    # Number of intervals used to approximate intersections between the spline and the connection-circle
 
 circle_radius = np.sqrt(MAX_CONNECTOR_LENGTH**2 - TRACK_HEIGHT**2)
@@ -79,21 +80,70 @@ def get_random_segment(number_knots = MAX_KNOTS):
     random_segment = (number_knots-1)*random.random()
     return random_segment
 
+def check_surrounding_points(spline, circle_center, radius, vertex, previous_segment = True, next_segment = True, num_intervals = EVALUATE_INTERVALS):
+    if(previous_segment==next_segment==False): return None
+    previous_times = np.array([])
+    next_times = np.array([])
+    #print(vertex)
+    if(previous_segment):
+        previous_times = np.arange(num_intervals)/num_intervals + vertex - 1
+    if(next_segment):
+        next_times = np.arange(num_intervals)/num_intervals + vertex
+    crossing_times = np.array([])
+    #print(previous_times)
+    print(next_times)
+    for time in previous_times:
+        if(time == previous_times[-1]) : continue
+        if((np.linalg.norm(circle_center - spline.evaluate(time))<=circle_radius)!=(np.linalg.norm(circle_center - spline.evaluate(time + 1/num_intervals))<= circle_radius)):
+            if(np.linalg.norm(circle_center - spline.evaluate(time))<=circle_radius):
+                crossing_times = np.append(crossing_times, time)
+            else:
+                crossing_times = np.append(crossing_times, time + 1/num_intervals)
+    for time in next_times:
+        if(time == next_times[-1]) : continue
+        if((np.linalg.norm(circle_center - spline.evaluate(time))<=circle_radius)!=(np.linalg.norm(circle_center - spline.evaluate(time + 1/num_intervals))<= circle_radius)):
+            if(np.linalg.norm(circle_center - spline.evaluate(time))<=circle_radius):
+                crossing_times = np.append(crossing_times, time)
+            else:
+                crossing_times = np.append(crossing_times, time + 1/num_intervals)
+
+    return crossing_times
+
+def get_inside_vertices(anchor_point, spline, radius, epsilon = CIRCLE_EPSILON):
+    is_inside = (np.linalg.norm(anchor_point - spline.evaluate(s1.grid), axis=1)) <= radius + epsilon
+    inside_vertices = np.where(is_inside==True)
+    inside_vertices = inside_vertices[0]
+    return inside_vertices
 
 
 track = get_random_track(debug_info=False)
 s1 = splines.CatmullRom(track, endconditions='closed')
 
-point = get_random_point_on_track(s1, debug_info=False)
-is_inside = (np.linalg.norm(point - s1.evaluate(s1.grid), axis=1)) <= circle_radius
-inside_vertices = np.where(is_inside==True)
+anchor_point = get_random_point_on_track(s1, debug_info=False)
+#anchor_point = s1.evaluate(s1.grid[-2])
+inside_vertices = get_inside_vertices(anchor_point, s1, circle_radius)
+
+if(len(np.where(inside_vertices == s1.grid[-2])[0])==0):
+    inside_vertices = np.append(inside_vertices, s1.grid[-2])
+
+crossing_times = np.array([])
+for vertex in inside_vertices:
+    crossing_times = np.append(crossing_times, check_surrounding_points(s1, anchor_point, circle_radius, vertex, previous_segment=vertex!=0, next_segment=vertex<MAX_KNOTS, num_intervals=EVALUATE_INTERVALS if vertex == MAX_KNOTS-1 else EVALUATE_INTERVALS*3))
+
+crossing_points = np.array(s1.evaluate(crossing_times))
+
 
 
 fig, ax = plt.subplots()
 ax.axis('equal')
-circle = plt.Circle((point[0],point[1]),circle_radius,color='g',fill=False)
+circle = plt.Circle((anchor_point[0],anchor_point[1]),circle_radius,color='g',fill=False)
 #plt.plot(vertices)
 plot_spline_2d(s1, ax=ax,dots_per_second=30)
-ax.plot(point[0],point[1],'o')
+ax.plot(anchor_point[0],anchor_point[1],'o')
+for point in crossing_points:
+    #print(point)
+    x = point[0]
+    y = point[1]
+    ax.plot(x, y, 'o')
 ax.add_patch(circle)
 plt.show()
