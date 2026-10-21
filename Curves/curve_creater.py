@@ -35,8 +35,10 @@ def point_changer(p_original,level):
 def plot_spline(spline, label=None):
 
     fig, ax = plt.subplots()
+    for i in range(len(spline)):
+        plot_spline_2d(spline[i], ax=ax, label=label[i])
 
-    plot_spline_2d(spline, ax=ax, label=label)
+    # plot_spline_2d(spline, ax=ax, label=label)
     plt.xlabel('x')
     plt.ylabel('y')
     plt.grid()
@@ -56,7 +58,7 @@ def plot_spline(spline, label=None):
 def plot_tangent(spline, label=None):
     t = np.linspace(0, 1, 10)
     fig, ax = plt.subplots() 
-    plot_tangent_2d(spline[i], t, ax=ax, label=label[i])
+    # plot_tangent_2d(spline[i], t, ax=ax, label=label[i])
     plt.xlabel('x')
     plt.ylabel('y')
     plt.grid()
@@ -89,7 +91,10 @@ def main():
     points_number= int(input("Enter the number of points for the ellipse: \n"))
 
     p2= shape_creator(points_number)
-
+    print("p1:", p1)
+    print("shape_p1:", p1.shape)
+    print("p2:", p2)
+    print("shape_p2:", p2.shape)
 
     p1_changed, p1_original = point_changer(p1*5, int(input("Enter the level of change for p1 (1 or 2): \n")))
     p2_changed,p2_original = point_changer(p2, int(input("Enter the level of change for p2 (1 or 2): \n")))
@@ -97,18 +102,22 @@ def main():
 
     s1_0 = splines.CatmullRom(p1_original, endconditions='closed')
     s2_0= splines.CatmullRom(p2_original, endconditions='closed')
-    spline_unchanged = [s1_0, s2_0]
-    label_unchanged = ['original Catmull-Rom Spline', 'original_ellipse-spline']
-
+    
     s1 = splines.CatmullRom(p1_changed, endconditions='closed')
     s2 = splines.CatmullRom(p2_changed, endconditions='closed')
-    spline = [s1, s2]
-    label = ['changed Catmull-Rom Spline', 'changed_ellipse-spline']
+    
+    spline_p1 = [s1_0, s1]
+    label_unchanged = ['original Catmull-Rom Spline', 'changed Catmull-Rom Spline']
+    
+    spline_p2 = [s2_0, s2]
+    label = ['original_ellipse-spline', 'changed_ellipse-spline']
 
-    spline = np.hstack((spline_unchanged, spline))
-    label = np.hstack((label_unchanged, label))
+    spline = np.vstack((spline_p1, spline_p2))
+    label = np.vstack((label_unchanged, label))
     for i in range(len(spline)):
         plot_spline(spline[i], label=label[i])
+
+    # plot_spline(spline, label=label)
 
     return 0
 
