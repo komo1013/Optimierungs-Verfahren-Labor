@@ -9,7 +9,7 @@ import random
 from numpy import pi as PI
 import time
 
-start = time.perf_counter()
+start = time.perf_counter() # starting with a Timestamp to measure the time it takes to run the code
 
 '''Defining global variables'''
 MAX_RADIUS= 7               # Maximum absolute distance one point on the track can be away from the previous point on the track
@@ -22,7 +22,7 @@ MAX_CONNECTOR_LENGTH = 5    # Maximum allowed length for connections between gro
 CIRCLE_EPSILON = 0.2        # Arbitrary epsilon-value to also find vertices close to the anchor-circle
 EVALUATE_INTERVALS = 100    # Number of intervals used to approximate intersections between the spline and the connection-circle
 INTERSECT_EPSILON = 2-3     # Arbitrary epsilon-value used to find the intersections between connector-circles and the track
-
+DEBUGING_EVALUATE = True          # Boolean to turn on/off printing of debuging information for the evaluate-function
 
 circle_radius = np.sqrt(MAX_CONNECTOR_LENGTH**2 - TRACK_HEIGHT**2)
 
@@ -160,8 +160,9 @@ def check_surrounding_points(spline, circle_center, radius, locations, previous_
         avg_time_2 += step2 + step1
     if len(previous_times)!= 0 : avg_time_2 = avg_time_2/len(previous_times)
     if (len(next_times)) != 0 : avg_time_2 = avg_time_2/len(next_times)
-    print("Average step 1:",avg_time_1)
-    print("Average step 2:",avg_time_2)
+    if (DEBUGING_EVALUATE== False):
+        print("Average step 1:",avg_time_1)   #Anschalten
+        print("Average step 2:",avg_time_2)
 
 
 
@@ -178,100 +179,118 @@ def get_inside_vertices(anchor_point, spline, radius, epsilon = CIRCLE_EPSILON):
     return inside_times
 
 
-track = get_random_track(debug_info=False)
-s1 = splines.CatmullRom(track, endconditions='closed')
-s2 = splines.UnitSpeedAdapter(s1)
-print(s2.grid)
-#print(s2.evaluate(s2.grid[0]))
-print(s2.evaluate(s2.grid))
-#print(s1.evaluate(s1.grid))
-#print((0,0) - s2.evaluate(s2.grid))
-fig, ax = plt.subplots()
-ax.axis('equal')
-plot_spline_2d(s1, ax=ax,dots_per_second=30)
-all_crossing_times = np.array([])
+while True:
+    print("Creating a random track with the following parameters:")
+    track = get_random_track(debug_info=False)
+    s1 = splines.CatmullRom(track, endconditions='closed')
+    s2 = splines.UnitSpeedAdapter(s1)
+    print(s1.grid)
+    print(s2.grid)
+    #print(s2.evaluate(s2.grid[0]))
+    # print(s2.evaluate(s2.grid))
 
-for index in s1.grid:
-    if index == s1.grid[-1]: continue
-    anchor_point = s1.evaluate(index)
+    for i in range(len(s2.grid)):
+        print("s2.grid[{}]: {}".format(i, s2.evaluate(s2.grid[i])))
 
-    inside_vertices = get_inside_vertices(anchor_point, s1, circle_radius)
+        # print(s2.evaluate(s2.grid[i]))
 
-    if(len(np.where(inside_vertices == s1.grid[-2])[0])==0):
-        inside_vertices = np.append(inside_vertices, s1.grid[-2])
 
-    crossing_times = np.array([])
-    for vertex in inside_vertices:
-        is_last_vertex = vertex == (s1.grid[-2])
-        is_first_vertex = vertex == (s1.grid[0])
-        index = np.where(s1.grid == vertex)[0]
-        index = index[0]
-        if is_first_vertex:
-            locations = np.array([s1.grid[index], s1.grid[index+1]])
-            
-        elif (is_last_vertex): locations = np.array([s1.grid[index-1], s1.grid[index]])
-        else: locations = np.array([s1.grid[index-1], s1.grid[index], s1.grid[index+1]])
 
-        crossing_times = np.append(crossing_times, check_surrounding_points(s1, anchor_point, circle_radius, locations, 
-                                                                            previous_segment=not is_first_vertex, next_segment=not is_last_vertex, 
-                                                                            num_intervals=EVALUATE_INTERVALS if not is_last_vertex else EVALUATE_INTERVALS*3))
-    all_crossing_times = np.append(all_crossing_times, crossing_times)
-    crossing_points = np.array(s1.evaluate(crossing_times))
+    #print(s1.evaluate(s1.grid))
+    #print((0,0) - s2.evaluate(s2.grid))
+    fig, ax = plt.subplots()
+    ax.axis('equal')
+    plot_spline_2d(s1, ax=ax,dots_per_second=30)
+    all_crossing_times = np.array([])
 
-    circle = plt.Circle((anchor_point[0],anchor_point[1]),circle_radius,color='g',fill=False)
+    for index in s1.grid:
+        if index == s1.grid[-1]: continue
+        anchor_point = s1.evaluate(index)
 
-    ax.plot(anchor_point[0],anchor_point[1],'o')
+        inside_vertices = get_inside_vertices(anchor_point, s1, circle_radius)
 
-    for point in crossing_points:
-        #print(point)
-        x = point[0]
-        y = point[1]
-        ax.plot(x, y, 'o')
-    ax.add_patch(circle)
-all_crossing_times = np.unique(all_crossing_times, sorted=True)
-print(all_crossing_times)
-'''
-for index in s2.grid:
-    if index == s2.grid[-1]: continue
-    anchor_point = s2.evaluate(index)
+        if(len(np.where(inside_vertices == s1.grid[-2])[0])==0):
+            inside_vertices = np.append(inside_vertices, s1.grid[-2])
 
-    inside_vertices = get_inside_vertices(anchor_point, s2, circle_radius)
+        crossing_times = np.array([])
+        for vertex in inside_vertices:
+            is_last_vertex = vertex == (s1.grid[-2])
+            is_first_vertex = vertex == (s1.grid[0])
+            index = np.where(s1.grid == vertex)[0]
+            index = index[0]
+            if is_first_vertex:
+                locations = np.array([s1.grid[index], s1.grid[index+1]])
 
-    if(len(np.where(inside_vertices == s2.grid[-2])[0])==0):
-        inside_vertices = np.append(inside_vertices, s2.grid[-2])
+            elif (is_last_vertex): locations = np.array([s1.grid[index-1], s1.grid[index]])
+            else: locations = np.array([s1.grid[index-1], s1.grid[index], s1.grid[index+1]])
 
-    crossing_times = np.array([])
-    for vertex in inside_vertices:
-        is_last_vertex = vertex == (s2.grid[-2])
-        is_first_vertex = vertex == (s2.grid[0])
-        index = np.where(s2.grid == vertex)[0]
-        index = index[0]
-        if is_first_vertex:
-            locations = np.array([s2.grid[index], s2.grid[index+1]])
-            
-        elif (is_last_vertex): locations = np.array([s2.grid[index-1], s2.grid[index]])
-        else: locations = np.array([s2.grid[index-1], s2.grid[index], s2.grid[index+1]])
+            crossing_times = np.append(crossing_times, check_surrounding_points(s1, anchor_point, circle_radius, locations, 
+                                                                                previous_segment=not is_first_vertex, next_segment=not is_last_vertex, 
+                                                                                num_intervals=EVALUATE_INTERVALS if not is_last_vertex else EVALUATE_INTERVALS*3))
+        all_crossing_times = np.append(all_crossing_times, crossing_times)
+        crossing_points = np.array(s1.evaluate(crossing_times))
 
-        crossing_times = np.append(crossing_times, check_surrounding_points(s2, anchor_point, circle_radius, locations, 
-                                                                            previous_segment=not is_first_vertex, next_segment=not is_last_vertex, 
-                                                                            num_intervals=EVALUATE_INTERVALS if not is_last_vertex else EVALUATE_INTERVALS*3))
-    all_crossing_times = np.append(all_crossing_times, crossing_times)
-    crossing_points = np.array(s2.evaluate(crossing_times))
+        circle = plt.Circle((anchor_point[0],anchor_point[1]),circle_radius,color='g',fill=False)
 
-    circle = plt.Circle((anchor_point[0],anchor_point[1]),circle_radius,color='g',fill=False)
+        ax.plot(anchor_point[0],anchor_point[1],'o')
 
-    #ax.plot(anchor_point[0],anchor_point[1],'o')
+        for point in crossing_points:
+            #print(point)
+            x = point[0]
+            y = point[1]
+            ax.plot(x, y, 'o')
+        ax.add_patch(circle)
+    all_crossing_times = np.unique(all_crossing_times, sorted=True)
+    if (DEBUGING_EVALUATE== False):
+        print(all_crossing_times)
+    '''
+    for index in s2.grid:
+        if index == s2.grid[-1]: continue
+        anchor_point = s2.evaluate(index)
 
-    for point in crossing_points:
-        #print(point)
-        x = point[0]
-        y = point[1]
-        #ax.plot(x, y, 'o')
-    #ax.add_patch(circle)
+        inside_vertices = get_inside_vertices(anchor_point, s2, circle_radius)
 
-'''
-end = time.perf_counter()
+        if(len(np.where(inside_vertices == s2.grid[-2])[0])==0):
+            inside_vertices = np.append(inside_vertices, s2.grid[-2])
 
-print(end-start)
-plt.show()
-print("I'm doney with the runny")
+        crossing_times = np.array([])
+        for vertex in inside_vertices:
+            is_last_vertex = vertex == (s2.grid[-2])
+            is_first_vertex = vertex == (s2.grid[0])
+            index = np.where(s2.grid == vertex)[0]
+            index = index[0]
+            if is_first_vertex:
+                locations = np.array([s2.grid[index], s2.grid[index+1]])
+
+            elif (is_last_vertex): locations = np.array([s2.grid[index-1], s2.grid[index]])
+            else: locations = np.array([s2.grid[index-1], s2.grid[index], s2.grid[index+1]])
+
+            crossing_times = np.append(crossing_times, check_surrounding_points(s2, anchor_point, circle_radius, locations, 
+                                                                                previous_segment=not is_first_vertex, next_segment=not is_last_vertex, 
+                                                                                num_intervals=EVALUATE_INTERVALS if not is_last_vertex else EVALUATE_INTERVALS*3))
+        all_crossing_times = np.append(all_crossing_times, crossing_times)
+        crossing_points = np.array(s2.evaluate(crossing_times))
+
+        circle = plt.Circle((anchor_point[0],anchor_point[1]),circle_radius,color='g',fill=False)
+
+        #ax.plot(anchor_point[0],anchor_point[1],'o')
+
+        for point in crossing_points:
+            #print(point)
+            x = point[0]
+            y = point[1]
+            #ax.plot(x, y, 'o')
+        #ax.add_patch(circle)
+
+    '''
+    end = time.perf_counter()
+
+    print(end-start)
+    # plt.show()
+    print("I'm doney with the runny")
+    a= input("do you want to run it again? (y/n): ")
+    if a.lower() == 'n':
+        break
+    elif(DEBUGING_EVALUATE==False):
+        break
+        
