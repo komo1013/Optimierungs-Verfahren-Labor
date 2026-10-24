@@ -22,7 +22,7 @@ MAX_CONNECTOR_LENGTH = 5    # Maximum allowed length for connections between gro
 CIRCLE_EPSILON = 0.2        # Arbitrary epsilon-value to also find vertices close to the anchor-circle
 EVALUATE_INTERVALS = 100    # Number of intervals used to approximate intersections between the spline and the connection-circle
 INTERSECT_EPSILON = 2-3     # Arbitrary epsilon-value used to find the intersections between connector-circles and the track
-DEBUGING_EVALUATE = True          # Boolean to turn on/off printing of debuging information for the evaluate-function
+DEBUGING_EVALUATE = False          # Boolean to turn on/off printing of debuging information for the evaluate-function
 
 circle_radius = np.sqrt(MAX_CONNECTOR_LENGTH**2 - TRACK_HEIGHT**2)
 
@@ -187,14 +187,11 @@ while True:
     print(s1.grid)
     print(s2.grid)
     #print(s2.evaluate(s2.grid[0]))
-    # print(s2.evaluate(s2.grid))
-
-    for i in range(len(s2.grid)):
-        print("s2.grid[{}]: {}".format(i, s2.evaluate(s2.grid[i])))
-
-        # print(s2.evaluate(s2.grid[i]))
+    print("s2_grid\n",s2.grid[-1],"\n")
 
 
+    L = s2.grid[-1]
+    print("evaluation of grid points:\n",s2.evaluate(np.mod(s2.grid, L)),s2.evaluate(s2.grid[0]),"\n")
 
     #print(s1.evaluate(s1.grid))
     #print((0,0) - s2.evaluate(s2.grid))
@@ -286,7 +283,7 @@ while True:
     end = time.perf_counter()
 
     print(end-start)
-    # plt.show()
+    plt.show()
     print("I'm doney with the runny")
     a= input("do you want to run it again? (y/n): ")
     if a.lower() == 'n':
