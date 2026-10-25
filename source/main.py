@@ -178,6 +178,69 @@ def get_inside_vertices(anchor_point, spline, radius, epsilon = CIRCLE_EPSILON):
 
     return inside_times
 
+def segment_polynomials(spline):
+    """Pro Segment: Koeffizienten (4,2), höchste Potenz zuerst, lokaler Parameter u in [0,1]."""
+    g = np.asarray(spline.grid, dtype=float)
+    u = np.linspace(0, 1, 4)
+    V = np.vander(u, 4)                      # Spalten: u^3, u^2, u, 1
+    polys = []
+    for a, b in zip(g[:-1], g[1:]):
+        pts = np.asarray(spline.evaluate(a + u * (b - a)))   # (4, 2)
+        polys.append(np.linalg.solve(V, pts))                # (4, 2)
+    return g, polys
+
+def segment_boxes(polys):
+    """Achsenparallele Box pro Segment über die Bézier-Kontrollpunkte (garantiert umschließend)."""
+    boxes = []
+    for A, B, C, D in polys:                 # p(u) = A u^3 + B u^2 + C u + D
+        P = np.array([D, D + C/3, D + 2*C/3 + B/3, A + B + C + D])
+        boxes.append((P.min(axis=0), P.max(axis=0)))
+    return boxes
+
+def filter_segments(boxes, center, radius):
+    """Indizes der Segmente, deren Box die Quadrat-Hülle des Kreises überlappt."""
+    c = np.asarray(center, dtype=float)
+    lo, hi = c - radius, c + radius
+    return [i for i, (bmin, bmax) in enumerate(boxes)
+            if np.all(bmax >= lo) and np.all(bmin <= hi)]
+
+def circle_crossings(g, polys, boxes, center, radius, tol=1e-9):
+    """Parameterwerte t (im Original-Parameter des Splines), bei denen die Kurve den Kreis schneidet."""
+    c = np.asarray(center, dtype=float)
+    times = []
+    for i in filter_segments(boxes, c, radius):
+        q = polys[i].copy()                  # (4, 2)
+        q[3] -= c                            # p(u) - c
+        f = np.polymul(q[:, 0], q[:, 0]) + np.polymul(q[:, 1], q[:, 1])
+        f[-1] -= radius**2                   # |p-c|^2 - r^2, Grad 6
+        for root in np.roots(f):
+            if abs(root.imag) < tol and -tol <= root.real <= 1 + tol:
+                u = min(max(root.real, 0.0), 1.0)
+                times.append(g[i] + u * (g[i+1] - g[i]))
+    return np.unique(np.round(times, 9))     # Doppelte an Segmentgrenzen entfernen
+
+def mo_function(spline, g, polys, boxes, circle_radius):
+    fig, ax = plt.subplots()
+    ax.axis('equal')
+    plot_spline_2d(spline, ax=ax,dots_per_second=30)
+    all_crossing_times_mb = np.array([])
+    
+    for idx in spline.grid:
+        anchor_point = spline.evaluate(idx)
+        crossing_times_mb = circle_crossings(g, polys, boxes, anchor_point, circle_radius)
+        all_crossing_times_mb = np.append(all_crossing_times_mb, crossing_times_mb)
+        crossing_points_mb = spline.evaluate(crossing_times_mb) if len(crossing_times_mb) else []
+
+        circle = plt.Circle((anchor_point[0],anchor_point[1]),circle_radius,color='g',fill=False)
+        ax.plot(anchor_point[0],anchor_point[1],'o')
+        
+        for point in crossing_points_mb:
+            #print(point)
+            x = point[0]
+            y = point[1]
+            ax.plot(x, y, 'o')
+        ax.add_patch(circle)
+    return all_crossing_times_mb
 
 while True:
     print("Creating a random track with the following parameters:")
@@ -188,13 +251,17 @@ while True:
     print(s2.grid)
     #print(s2.evaluate(s2.grid[0]))
     print("s2_grid\n",s2.grid[-1],"\n")
-
+    
+    g, polys = segment_polynomials(s1)
+    boxes = segment_boxes(polys)
+    
 
     L = s2.grid[-1]
     print("evaluation of grid points:\n",s2.evaluate(np.mod(s2.grid, L)),s2.evaluate(s2.grid[0]),"\n")
 
     #print(s1.evaluate(s1.grid))
     #print((0,0) - s2.evaluate(s2.grid))
+    start_mv = time.perf_counter()
     fig, ax = plt.subplots()
     ax.axis('equal')
     plot_spline_2d(s1, ax=ax,dots_per_second=30)
@@ -237,9 +304,26 @@ while True:
             y = point[1]
             ax.plot(x, y, 'o')
         ax.add_patch(circle)
+
     all_crossing_times = np.unique(all_crossing_times, sorted=True)
+    end_mv = time.perf_counter()
+    
     if (DEBUGING_EVALUATE== False):
         print(all_crossing_times)
+    
+    #Trying to find the crossing points with the new method
+    start_mb = time.perf_counter()
+
+    
+
+    all_crossing_times_mb = mo_function(s1, g, polys, boxes, circle_radius)
+    all_crossing_times_mb = np.unique(all_crossing_times_mb, sorted=True)
+    print("All crossing times (method 2):", all_crossing_times_mb)
+    end_mb = time.perf_counter()
+    
+    print("Time for the old method:\n",end_mv-start_mv)
+    print("Time for the new method:\n",end_mb-start_mb)
+
     '''
     for index in s2.grid:
         if index == s2.grid[-1]: continue
@@ -282,7 +366,8 @@ while True:
     '''
     end = time.perf_counter()
 
-    print(end-start)
+    print("Time for the entire code:\n",end-start)
+
     plt.show()
     print("I'm doney with the runny")
     a= input("do you want to run it again? (y/n): ")
