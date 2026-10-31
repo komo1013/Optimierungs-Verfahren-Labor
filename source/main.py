@@ -196,18 +196,17 @@ def mo_function(spline, g, polys, boxes, anchor_points, circle_radius):
         ax.add_patch(circle)
     return all_crossing_times_mb
 
+'All of these only need to run once per spline'
+track = get_random_track(debug_info=False)
+s1 = splines.CatmullRom(track, endconditions='closed')
+total_track_length = s1.grid[-1] - s1.grid[0]
+distance_interpolator = get_distance_interpolator(s1)
+g, polys = segment_polynomials(s1)
+boxes = segment_boxes(polys)
+'Needs to be recalculated every time the number of anchors is changed (for now constant)'
+track_increments = total_track_length/NUM_ANCHORS
+
 while True:
-
-    'All of these only need to run once per spline'
-    track = get_random_track(debug_info=False)
-    s1 = splines.CatmullRom(track, endconditions='closed')
-    total_track_length = s1.grid[-1] - s1.grid[0]
-    distance_interpolator = get_distance_interpolator(s1)
-    g, polys = segment_polynomials(s1)
-    boxes = segment_boxes(polys)
-
-    'Needs to be recalculated every time the number of anchors is changed'
-    track_increments = total_track_length/NUM_ANCHORS
 
     'All of the following code is needed for the actual optimiziation, needs to run for every agent'
     start_mv = time.perf_counter()
@@ -218,6 +217,8 @@ while True:
     plt.ion()
     plt.show()
 
+    'The anchors wouldn\'t need to be regenerated, they are defined by the agent itself.'
+    'First generation should have some amount of randomness, otherwise it\'s a bit pointless.'
     anchor_points = np.array([np.array(s1.evaluate(track_increments))])
     for i in np.arange(2,NUM_ANCHORS+1):
         anchor_points = np.append(anchor_points, np.array([s1.evaluate(i*track_increments)]),axis=0)
@@ -228,4 +229,4 @@ while True:
     state_vector = np.ndarray.flatten(anchor_points)
     end_mv = time.perf_counter()
 
-    print(start_mv - end_mv)
+    print(end_mv - start_mv)
