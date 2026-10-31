@@ -1,5 +1,8 @@
 import numpy as np
 import scipy as sp
+from scipy.optimize import minimize
+from scipy.integrate import cumulative_trapezoid
+from scipy.interpolate import PchipInterpolator
 import gmsh
 import splines
 import matplotlib.pyplot as plt
@@ -21,8 +24,10 @@ TRACK_HEIGHT = 3            # Height of the simulated track above the ground anc
 MAX_CONNECTOR_LENGTH = 5    # Maximum allowed length for connections between ground anchors and points on the track
 CIRCLE_EPSILON = 0.2        # Arbitrary epsilon-value to also find vertices close to the anchor-circle
 EVALUATE_INTERVALS = 100    # Number of intervals used to approximate intersections between the spline and the connection-circle
-INTERSECT_EPSILON = 2-3     # Arbitrary epsilon-value used to find the intersections between connector-circles and the track
-DEBUGING_EVALUATE = False          # Boolean to turn on/off printing of debuging information for the evaluate-function
+INTERSECT_EPSILON = 2e-2    # Arbitrary epsilon-value used to find the intersections between connector-circles and the track
+NUM_ANCHORS = 6             # Number of anchors to be used (will get removed later)
+
+DEBUGGING_EVALUATE = False          # Boolean to turn on/off printing of debugging information for the evaluate-function
 
 circle_radius = np.sqrt(MAX_CONNECTOR_LENGTH**2 - TRACK_HEIGHT**2)
 
@@ -85,98 +90,48 @@ def get_random_segment(number_knots = MAX_KNOTS):
     random_segment = (number_knots-1)*random.random()
     return random_segment
 
-def check_surrounding_points(spline, circle_center, radius, locations, previous_segment = True, next_segment = True, num_intervals = EVALUATE_INTERVALS):
+def get_distance_interpolator(spline, num_intervals = EVALUATE_INTERVALS):
+    time_values = np.array([])
+    distance_values = np.array([])
+    cumulative_distance = 0
 
-    if(previous_segment==next_segment==False): return None
-    previous_times = np.array([])
-    next_times = np.array([])
-    current_location = locations[-2]
     
-    if previous_segment:
-        previous_location = locations[0]
-        total_previous_distance = current_location - previous_location
-        previous_increment = total_previous_distance/num_intervals
-        
+    for time0, time1 in zip(spline.grid[:-1], spline.grid[1:]):
+        intermediate_times = np.linspace(time0, time1, num_intervals+1)
 
+        velocity_vectors = spline.evaluate(intermediate_times, 1)
+        velocities = np.linalg.norm(velocity_vectors, axis=1)
 
-    if next_segment: 
-        next_location = locations[-1]
-        total_next_distance = next_location - current_location
-        next_increment = total_next_distance/num_intervals
+        intermediate_distances = cumulative_trapezoid(
+            velocities,
+            intermediate_times,
+            initial=0
+        )
+        if len(time_values)>0:
+            intermediate_times = intermediate_times[1:]
+            intermediate_distances = intermediate_distances[1:]
+        time_values = np.append(time_values, intermediate_times)
+        distance_values = np.append(distance_values, intermediate_distances + cumulative_distance)
+        cumulative_distance += intermediate_distances[-1]
 
+    time_to_distance = PchipInterpolator(time_values, distance_values)
 
-    if(previous_segment):
-        previous_times = np.arange(num_intervals)*previous_increment + previous_location
-        if next_segment: previous_times = np.append(previous_times, current_location)
-    if(next_segment):
-        next_times = np.arange(num_intervals)*next_increment + current_location
+    return time_to_distance 
 
+def get_fitness(intersections, interpolator, spline):
+    s_points = np.array(interpolator(intersections))
+    last_point = interpolator(spline.grid[-1])
+    distances = np.array([])
+    for i,s_point in enumerate(s_points[1:]):
 
+        distances = np.append(distances, s_point - s_points[i])
 
-    crossing_times = np.array([])
-    #print(previous_times)
-    #print(next_times)
-    #print(len(next_times))
-    avg_time_1 = avg_time_2 = 0
-    #print(spline.evaluate(previous_times))
-    #idx = -1
-    #if(len(previous_times) != 0):
-    #    points = spline.evaluate(previous_times)
-    #    points -= circle_center
-    #    dist = np.linalg.norm(points, axis=1)
-    #    dist = np.abs(dist-radius)
-    #    print(dist)
-    #    idx = np.argmin(dist) if dist[idx] <= INTERSECT_EPSILON else -1
-    ##if len(previous_times)!=0 : idx = np.argmin(np.abs(spline.evaluate(previous_times) - circle_center)-radius)
-    #print(idx)
-    #if idx != -1 :print(spline.evaluate(idx))
-    for location in previous_times:
-
-        if(location == previous_times[-1]) : continue
-        start = time.perf_counter()
-        current_distance = np.linalg.norm(circle_center - spline.evaluate(location))
-        next_distance = np.linalg.norm(circle_center - spline.evaluate(location + previous_increment))
-        step1 = time.perf_counter() - start
-        if((current_distance<=radius)!=(next_distance<= radius)):
-            if(np.linalg.norm(circle_center - spline.evaluate(location))<=circle_radius):
-                crossing_times = np.append(crossing_times, location)
-            else:
-                crossing_times = np.append(crossing_times, location + previous_increment)
-        step2 = time.perf_counter() - step1
-        avg_time_1 += (step2 + step1)
-    if len(previous_times)!= 0 : avg_time_1 = avg_time_1/len(previous_times)
-    for location in next_times:
-        if(location == next_times[-1]) : continue
-        start = time.perf_counter()
-        current_distance = np.linalg.norm(circle_center - spline.evaluate(location))
-        next_distance = np.linalg.norm(circle_center - spline.evaluate(location + next_increment))
-        step1 = time.perf_counter() - start
-        if((current_distance<=radius)!=(next_distance<= radius)):
-            if(current_distance<=radius):
-                crossing_times = np.append(crossing_times, location)
-            else:
-                crossing_times = np.append(crossing_times, location + next_increment)
-        step2 = time.perf_counter() - step1
-        avg_time_2 += step2 + step1
-    if len(previous_times)!= 0 : avg_time_2 = avg_time_2/len(previous_times)
-    if (len(next_times)) != 0 : avg_time_2 = avg_time_2/len(next_times)
-    if (DEBUGING_EVALUATE== False):
-        print("Average step 1:",avg_time_1)   #Anschalten
-        print("Average step 2:",avg_time_2)
-
-
-
-    return crossing_times
-
-def get_inside_vertices(anchor_point, spline, radius, epsilon = CIRCLE_EPSILON):
-    is_inside = (np.linalg.norm(anchor_point - spline.evaluate(spline.grid), axis=1)) <= radius + epsilon
-    inside_vertices = np.where(is_inside==True)
-    inside_vertices = inside_vertices[0]
-    inside_times = np.array([])
-    for vertex in inside_vertices:
-        if(vertex !=20):inside_times = np.append(inside_times, spline.grid[vertex])
-
-    return inside_times
+        if s_point == s_points[-1]:
+            remaining_distance = last_point - s_point
+            lap_distance = remaining_distance + s_points[0]
+            distances = np.append(distances, lap_distance)
+    fitness = distances[np.argmax(distances)]
+    return fitness
 
 def segment_polynomials(spline):
     """Pro Segment: Koeffizienten (4,2), höchste Potenz zuerst, lokaler Parameter u in [0,1]."""
@@ -219,14 +174,13 @@ def circle_crossings(g, polys, boxes, center, radius, tol=1e-9):
                 times.append(g[i] + u * (g[i+1] - g[i]))
     return np.unique(np.round(times, 9))     # Doppelte an Segmentgrenzen entfernen
 
-def mo_function(spline, g, polys, boxes, circle_radius):
+def mo_function(spline, g, polys, boxes, anchor_points, circle_radius):
     fig, ax = plt.subplots()
     ax.axis('equal')
     plot_spline_2d(spline, ax=ax,dots_per_second=30)
     all_crossing_times_mb = np.array([])
     
-    for idx in spline.grid:
-        anchor_point = spline.evaluate(idx)
+    for anchor_point in anchor_points:
         crossing_times_mb = circle_crossings(g, polys, boxes, anchor_point, circle_radius)
         all_crossing_times_mb = np.append(all_crossing_times_mb, crossing_times_mb)
         crossing_points_mb = spline.evaluate(crossing_times_mb) if len(crossing_times_mb) else []
@@ -243,136 +197,38 @@ def mo_function(spline, g, polys, boxes, circle_radius):
     return all_crossing_times_mb
 
 while True:
-    print("Creating a random track with the following parameters:")
+    
     track = get_random_track(debug_info=False)
     s1 = splines.CatmullRom(track, endconditions='closed')
-    s2 = splines.UnitSpeedAdapter(s1)
-    print(s1.grid)
-    print(s2.grid)
-    #print(s2.evaluate(s2.grid[0]))
-    print("s2_grid\n",s2.grid[-1],"\n")
+
+    
+    distance_interpolator = get_distance_interpolator(s1)
+
+    total_track_length = s1.grid[-1] - s1.grid[0]
+    track_increments = total_track_length/NUM_ANCHORS
+
+
     
     g, polys = segment_polynomials(s1)
     boxes = segment_boxes(polys)
     
 
-    L = s2.grid[-1]
-    print("evaluation of grid points:\n",s2.evaluate(np.mod(s2.grid, L)),s2.evaluate(s2.grid[0]),"\n")
 
-    #print(s1.evaluate(s1.grid))
-    #print((0,0) - s2.evaluate(s2.grid))
     start_mv = time.perf_counter()
     fig, ax = plt.subplots()
     ax.axis('equal')
     plot_spline_2d(s1, ax=ax,dots_per_second=30)
-    all_crossing_times = np.array([])
 
-    for index in s1.grid:
-        if index == s1.grid[-1]: continue
-        anchor_point = s1.evaluate(index)
-
-        inside_vertices = get_inside_vertices(anchor_point, s1, circle_radius)
-
-        if(len(np.where(inside_vertices == s1.grid[-2])[0])==0):
-            inside_vertices = np.append(inside_vertices, s1.grid[-2])
-
-        crossing_times = np.array([])
-        for vertex in inside_vertices:
-            is_last_vertex = vertex == (s1.grid[-2])
-            is_first_vertex = vertex == (s1.grid[0])
-            index = np.where(s1.grid == vertex)[0]
-            index = index[0]
-            if is_first_vertex:
-                locations = np.array([s1.grid[index], s1.grid[index+1]])
-
-            elif (is_last_vertex): locations = np.array([s1.grid[index-1], s1.grid[index]])
-            else: locations = np.array([s1.grid[index-1], s1.grid[index], s1.grid[index+1]])
-
-            crossing_times = np.append(crossing_times, check_surrounding_points(s1, anchor_point, circle_radius, locations, 
-                                                                                previous_segment=not is_first_vertex, next_segment=not is_last_vertex, 
-                                                                                num_intervals=EVALUATE_INTERVALS if not is_last_vertex else EVALUATE_INTERVALS*3))
-        all_crossing_times = np.append(all_crossing_times, crossing_times)
-        crossing_points = np.array(s1.evaluate(crossing_times))
-
-        circle = plt.Circle((anchor_point[0],anchor_point[1]),circle_radius,color='g',fill=False)
-
-        ax.plot(anchor_point[0],anchor_point[1],'o')
-
-        for point in crossing_points:
-            #print(point)
-            x = point[0]
-            y = point[1]
-            ax.plot(x, y, 'o')
-        ax.add_patch(circle)
-
-    all_crossing_times = np.unique(all_crossing_times, sorted=True)
-    end_mv = time.perf_counter()
-    
-    if (DEBUGING_EVALUATE== False):
-        print(all_crossing_times)
-    
-    #Trying to find the crossing points with the new method
-    start_mb = time.perf_counter()
-
-    
-
-    all_crossing_times_mb = mo_function(s1, g, polys, boxes, circle_radius)
-    all_crossing_times_mb = np.unique(all_crossing_times_mb, sorted=True)
-    print("All crossing times (method 2):", all_crossing_times_mb)
-    end_mb = time.perf_counter()
-    
-    print("Time for the old method:\n",end_mv-start_mv)
-    print("Time for the new method:\n",end_mb-start_mb)
-
-    '''
-    for index in s2.grid:
-        if index == s2.grid[-1]: continue
-        anchor_point = s2.evaluate(index)
-
-        inside_vertices = get_inside_vertices(anchor_point, s2, circle_radius)
-
-        if(len(np.where(inside_vertices == s2.grid[-2])[0])==0):
-            inside_vertices = np.append(inside_vertices, s2.grid[-2])
-
-        crossing_times = np.array([])
-        for vertex in inside_vertices:
-            is_last_vertex = vertex == (s2.grid[-2])
-            is_first_vertex = vertex == (s2.grid[0])
-            index = np.where(s2.grid == vertex)[0]
-            index = index[0]
-            if is_first_vertex:
-                locations = np.array([s2.grid[index], s2.grid[index+1]])
-
-            elif (is_last_vertex): locations = np.array([s2.grid[index-1], s2.grid[index]])
-            else: locations = np.array([s2.grid[index-1], s2.grid[index], s2.grid[index+1]])
-
-            crossing_times = np.append(crossing_times, check_surrounding_points(s2, anchor_point, circle_radius, locations, 
-                                                                                previous_segment=not is_first_vertex, next_segment=not is_last_vertex, 
-                                                                                num_intervals=EVALUATE_INTERVALS if not is_last_vertex else EVALUATE_INTERVALS*3))
-        all_crossing_times = np.append(all_crossing_times, crossing_times)
-        crossing_points = np.array(s2.evaluate(crossing_times))
-
-        circle = plt.Circle((anchor_point[0],anchor_point[1]),circle_radius,color='g',fill=False)
-
-        #ax.plot(anchor_point[0],anchor_point[1],'o')
-
-        for point in crossing_points:
-            #print(point)
-            x = point[0]
-            y = point[1]
-            #ax.plot(x, y, 'o')
-        #ax.add_patch(circle)
-
-    '''
-    end = time.perf_counter()
-
-    print("Time for the entire code:\n",end-start)
-
+    plt.ion()
     plt.show()
-    print("I'm doney with the runny")
-    a= input("do you want to run it again? (y/n): ")
-    if a.lower() == 'n':
-        break
-    elif(DEBUGING_EVALUATE==False):
-        break
-        
+
+    anchor_points = np.array([np.array(s1.evaluate(track_increments))])
+    for i in np.arange(2,NUM_ANCHORS+1):
+        anchor_points = np.append(anchor_points, np.array([s1.evaluate(i*track_increments)]),axis=0)
+
+    all_crossing_times = mo_function(s1, g, polys, boxes, anchor_points, circle_radius)
+    all_crossing_times = np.unique(all_crossing_times, sorted=True)
+    fitness = get_fitness(all_crossing_times, distance_interpolator, s1)
+    state_vector = np.ndarray.flatten(anchor_points)
+
+    print(all_crossing_times)
