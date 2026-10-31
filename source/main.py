@@ -197,23 +197,19 @@ def mo_function(spline, g, polys, boxes, anchor_points, circle_radius):
     return all_crossing_times_mb
 
 while True:
-    
+
+    'All of these only need to run once per spline'
     track = get_random_track(debug_info=False)
     s1 = splines.CatmullRom(track, endconditions='closed')
-
-    
-    distance_interpolator = get_distance_interpolator(s1)
-
     total_track_length = s1.grid[-1] - s1.grid[0]
-    track_increments = total_track_length/NUM_ANCHORS
-
-
-    
+    distance_interpolator = get_distance_interpolator(s1)
     g, polys = segment_polynomials(s1)
     boxes = segment_boxes(polys)
-    
 
+    'Needs to be recalculated every time the number of anchors is changed'
+    track_increments = total_track_length/NUM_ANCHORS
 
+    'All of the following code is needed for the actual optimiziation, needs to run for every agent'
     start_mv = time.perf_counter()
     fig, ax = plt.subplots()
     ax.axis('equal')
@@ -230,5 +226,6 @@ while True:
     all_crossing_times = np.unique(all_crossing_times, sorted=True)
     fitness = get_fitness(all_crossing_times, distance_interpolator, s1)
     state_vector = np.ndarray.flatten(anchor_points)
+    end_mv = time.perf_counter()
 
-    print(all_crossing_times)
+    print(start_mv - end_mv)
