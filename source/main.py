@@ -27,6 +27,7 @@ EVALUATE_INTERVALS = 100    # Number of intervals used to approximate intersecti
 INTERSECT_EPSILON = 2e-2    # Arbitrary epsilon-value used to find the intersections between connector-circles and the track
 NUM_ANCHORS = np.array([20,19,18,17,16])            # Number of anchors to be used (will get removed later)
 DEBUGGING_EVALUATE = False          # Boolean to turn on/off printing of debugging information for the evaluate-function
+F_VAR = 0.5
 
 circle_radius = np.sqrt(MAX_CONNECTOR_LENGTH**2 - TRACK_HEIGHT**2)
 
@@ -198,44 +199,41 @@ def mo_function(spline, g, polys, boxes, anchor_points, circle_radius):
 
 def create_multiple_agents(anchor_number, s1, g, polys, boxes, circle_radius, distance_interpolator,total_track_length):
     fitnesses = np.array([])
+    state_vectors = np.array([])
     track_increments = total_track_length/anchor_number
     while True:
         # Initialize the array of anchor points
         anchor_points = np.array([np.array(s1.evaluate(track_increments))])
+        random_anc_points = np.sort(np.random.uniform(s1.grid[0],s1.grid[-1],size=anchor_number))
+        anchor_points = np.asarray(s1.evaluate(random_anc_points))
 
-
-
-        random_anc_points = np.sort(
-        np.random.uniform(
-            s1.grid[0],
-            s1.grid[-1],
-            size=anchor_number
-            )
-        )
-
-        anchor_points = np.asarray(
-            s1.evaluate(random_anc_points)
-        )
-        all_crossing_times = mo_function(s1, g, polys, boxes,anchor_points, circle_radius)
-        all_crossing_times = np.unique(all_crossing_times, sorted=True)
-        fitness = get_fitness(all_crossing_times, distance_interpolator, s1)
-        state_vector = np.ndarray.flatten(anchor_points)
-        print("Fitness: ", fitness)
-        fitnesses = np.append(fitnesses, fitness)    
-        if len(fitnesses) >= 10:
-            break
-        for i in np.arange(2,anchor_number+1):
-            anchor_points = np.append(anchor_points, np.array([s1.evaluate(i*track_increments)]),axis=0)    
         all_crossing_times = mo_function(s1, g, polys, boxes,anchor_points, circle_radius)
         all_crossing_times = np.unique(all_crossing_times, sorted=True)
         fitness = get_fitness(all_crossing_times, distance_interpolator, s1)
         state_vector = np.ndarray.flatten(anchor_points)
         print("Fitness: ", fitness)
         fitnesses = np.append(fitnesses, fitness)  
-    
-    
-    return fitnesses
+        state_vectors = np.append(state_vectors, state_vector)  
+        if len(fitnesses) >= 10:
+            break
 
+    
+    for i in np.arange(2,anchor_number+1):
+        anchor_points = np.append(anchor_points, np.array([s1.evaluate(i*track_increments)]),axis=0)    
+    all_crossing_times = mo_function(s1, g, polys, boxes,anchor_points, circle_radius)
+    all_crossing_times = np.unique(all_crossing_times, sorted=True)
+    fitness = get_fitness(all_crossing_times, distance_interpolator, s1)
+    state_vector = np.ndarray.flatten(anchor_points)
+    print("Fitness: ", fitness)
+    fitnesses = np.append(fitnesses, fitness)  
+    state_vectors = np.append(state_vectors, state_vector)  
+
+    return fitnesses, state_vectors
+
+def crossover_T_vec(agent_v_vector):
+    CR_r = np.random.random(size=agent_v_vector.size)
+    agent_T =np.array([])
+    return agent_T
 
 'All of these only need to run once per spline'
 track = get_random_track(debug_info=False)
@@ -252,9 +250,6 @@ time_mv = np.array([])
 for i in np.arange(0,1):
     print(f"Processing {NUM_ANCHORS[i]} anchors")
 
-    
-    # while True:
-    
     'All of the following code is needed for the actual optimiziation, needs to run for every agent'
     start_mv = time.perf_counter()
     
@@ -263,11 +258,32 @@ for i in np.arange(0,1):
     plot_spline_2d(s1, ax=ax,dots_per_second=30)
     plt.ion()
     plt.show()
-    
     'The anchors wouldn\'t need to be regenerated, they are defined by the agent itself.'
     'First generation should have some amount of randomness, otherwise it\'s a bit pointless.'
 
-    trial_fitnesses = create_multiple_agents(NUM_ANCHORS[i], s1, g, polys, boxes, circle_radius, distance_interpolator,total_track_length)
+    Agents_list, Agent_state_vectors = create_multiple_agents(NUM_ANCHORS[i], s1, g, polys, boxes, circle_radius, distance_interpolator,total_track_length)
+
+    'Creating a neu agent T  for every existing agent A, by mutating the state vector of A'
+
+    for j in np.arange(0,Agents_list.size):
+        print(f"Processing agent {j} of {NUM_ANCHORS[i]} anchors")
+        helper_agents = np.copy(Agent_state_vectors)
+        helper_agents = np.delete(helper_agents, j)
+        help_3 = np.array([])
+        for k in range(3):
+            idx = np.random.randint(0,helper_agents.size) 
+            help_3 = np.append(help_3, helper_agents[idx])
+            helper_agents =np.delete(helper_agents, idx)
+            print("size:", helper_agents.size)
+
+
+        input("blah")
+        agent_V_state_vector = np.array([help_3[0] + F_VAR*(help_3[1]-help_3[2])])
+        agent_T_state_ = crossover_T_vec(agent_V_state_vector)
+
+
+
+
 
     end_mv = time.perf_counter()
     time_mv =np.append(time_mv, end_mv - start_mv)
@@ -275,9 +291,9 @@ for i in np.arange(0,1):
 end_all_time = time.perf_counter()
 print("Total time for all anchors: ", end_all_time - start_all_time)
 
-print("Fitnesses: ", trial_fitnesses)
-print("Best fitness: ", np.min(trial_fitnesses))
-print("number of anchors for best fitness: ", NUM_ANCHORS[np.argmax(trial_fitnesses)])
+print("Fitnesses: ", Agents_list)
+print("Best fitness: ", np.min(Agents_list))
+print("number of anchors for best fitness: ")
 
 print(end_mv - start_mv)
 input("Press Enter to continue...")
