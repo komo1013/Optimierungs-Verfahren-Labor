@@ -35,6 +35,7 @@ def point_changer(p_original,level):
 def plot_spline(spline, label=None):
 
     fig, ax = plt.subplots()
+    ax.axes(equal=True)
     for i in range(len(spline)):
         plot_spline_2d(spline[i], ax=ax, label=label[i])
 
@@ -43,6 +44,7 @@ def plot_spline(spline, label=None):
     plt.ylabel('y')
     plt.grid()
     plt.legend()
+
     plt.title('Catmull-Rom Spline Interpolation')
     plt.show()
     save_print = bool(input("Do you want to save the spline plot? (y/n): ").lower() == 'y')
