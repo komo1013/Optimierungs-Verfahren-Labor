@@ -22,11 +22,10 @@ MAX_KNOTS = 20              # Number of points defining the track
 MAX_DEVIATION = 10          # Twice the maximum deviation of random points in x and y direction, it gets centered around 0
 TRACK_HEIGHT = 3            # Height of the simulated track above the ground anchors
 MAX_CONNECTOR_LENGTH = 5    # Maximum allowed length for connections between ground anchors and points on the track
-CIRCLE_EPSILON = 0.2        # Arbitrary epsilon-value to also find vertices close to the anchor-circle
 EVALUATE_INTERVALS = 100    # Number of intervals used to approximate intersections between the spline and the connection-circle
-INTERSECT_EPSILON = 2e-2    # Arbitrary epsilon-value used to find the intersections between connector-circles and the track
 NUM_ANCHORS = 6             # Number of anchors to be used (will get removed later)
-FITNESS_EPSILON = 1e-2
+FITNESS_EPSILON = 1e-2      # Arbitrary Epsilon-factor to shift intersections to recognize distances inside anchors and remove those from
+                            # fitness consideration
 
 DEBUGGING_EVALUATE = False          # Boolean to turn on/off printing of debugging information for the evaluate-function
 
@@ -125,7 +124,9 @@ def get_fitness(intersections, interpolator, spline, anchor_points):
     distances = np.array([])
     for i,s_point in enumerate(s_points[1:]):
         if s_point == s_points[-1]:
-            shifted_time = intersections[i+1] + FITNESS_EPSILON
+            remaining_distance = last_point - s_point
+            lap_distance = remaining_distance + s_points[0]
+            shifted_time = intersections[i+1] + lap_distance*FITNESS_EPSILON
             shifted_point = spline.evaluate(shifted_time)
             inside_anchor = False
             for anchor_point in anchor_points:
@@ -133,12 +134,10 @@ def get_fitness(intersections, interpolator, spline, anchor_points):
                 if(dist < circle_radius):
                     inside_anchor = True
                     break
-            remaining_distance = last_point - s_point
-            lap_distance = remaining_distance + s_points[0]
             if (not inside_anchor):
                 distances = np.append(distances, lap_distance)
             
-        shifted_time = intersections[i] + FITNESS_EPSILON
+        shifted_time = intersections[i] + lap_distance*FITNESS_EPSILON
         shifted_point = spline.evaluate(shifted_time)
         inside_anchor = False
         for anchor_point in anchor_points:
@@ -245,7 +244,7 @@ while True:
 
     all_crossing_times = mo_function(s1, g, polys, boxes, anchor_points, circle_radius)
     all_crossing_times = np.unique(all_crossing_times, sorted=True)
-    fitness = get_fitness(all_crossing_times, distance_interpolator, s1)
+    fitness = get_fitness(all_crossing_times, distance_interpolator, s1, anchor_points)
     state_vector = np.ndarray.flatten(anchor_points)
     end_mv = time.perf_counter()
 
