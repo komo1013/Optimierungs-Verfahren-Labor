@@ -25,11 +25,12 @@ MAX_CONNECTOR_LENGTH = 5    # Maximum allowed length for connections between gro
 CIRCLE_EPSILON = 0.2        # Arbitrary epsilon-value to also find vertices close to the anchor-circle
 EVALUATE_INTERVALS = 100    # Number of intervals used to approximate intersections between the spline and the connection-circle
 INTERSECT_EPSILON = 2e-2    # Arbitrary epsilon-value used to find the intersections between connector-circles and the track
-NUM_ANCHORS = np.array([20,19,18,17,16])            # Number of anchors to be used (will get removed later)
+NUM_ANCHORS = np.array([10,9,8,7,6,5])            # Number of anchors to be used (will get removed later)
 DEBUGGING_EVALUATE = False          # Boolean to turn on/off printing of debugging information for the evaluate-function
 F_VAR = 0.5
 
 circle_radius = np.sqrt(MAX_CONNECTOR_LENGTH**2 - TRACK_HEIGHT**2)
+optimization_completed = False
 
 '''Defining functions'''
 
@@ -176,6 +177,7 @@ def circle_crossings(g, polys, boxes, center, radius, tol=1e-9):
 
 def mo_function(spline, g, polys, boxes, anchor_points, circle_radius):
     fig, ax = plt.subplots()
+    ax.grid()
     ax.axis('equal')
     plot_spline_2d(spline, ax=ax,dots_per_second=30)
     all_crossing_times_mb = np.array([])
@@ -206,34 +208,57 @@ def create_multiple_agents(anchor_number, s1, g, polys, boxes, circle_radius, di
         anchor_points = np.array([np.array(s1.evaluate(track_increments))])
         random_anc_points = np.sort(np.random.uniform(s1.grid[0],s1.grid[-1],size=anchor_number))
         anchor_points = np.asarray(s1.evaluate(random_anc_points))
-
+        print("size Anchor points: ", anchor_points.size)
         all_crossing_times = mo_function(s1, g, polys, boxes,anchor_points, circle_radius)
         all_crossing_times = np.unique(all_crossing_times, sorted=True)
         fitness = get_fitness(all_crossing_times, distance_interpolator, s1)
         state_vector = np.ndarray.flatten(anchor_points)
+        state_vector = np.array(anchor_points)
+                
         print("Fitness: ", fitness)
         fitnesses = np.append(fitnesses, fitness)  
         state_vectors = np.append(state_vectors, state_vector)  
         if len(fitnesses) >= 10:
             break
+        
 
-    
-    for i in np.arange(2,anchor_number+1):
-        anchor_points = np.append(anchor_points, np.array([s1.evaluate(i*track_increments)]),axis=0)    
-    all_crossing_times = mo_function(s1, g, polys, boxes,anchor_points, circle_radius)
-    all_crossing_times = np.unique(all_crossing_times, sorted=True)
-    fitness = get_fitness(all_crossing_times, distance_interpolator, s1)
-    state_vector = np.ndarray.flatten(anchor_points)
-    print("Fitness: ", fitness)
-    fitnesses = np.append(fitnesses, fitness)  
-    state_vectors = np.append(state_vectors, state_vector)  
+    # input("Press Enter to continue...")
+   
+    # print("size Anchor points: ", anchor_points.size)
+    # anchor_points = np.append(anchor_points, np.array([s1.evaluate(track_increments)]),axis=0)   
+    # # print("Anchor points: ", anchor_points) 
+    # print("size Anchor points: ", anchor_points.size)
+    # all_crossing_times = mo_function(s1, g, polys, boxes,anchor_points, circle_radius)
+    # all_crossing_times = np.unique(all_crossing_times, sorted=True)
+    # fitness = get_fitness(all_crossing_times, distance_interpolator, s1)
+    # state_vector = np.ndarray.flatten(anchor_points)
+    # print("Fitness: ", fitness)
+    # fitnesses = np.append(fitnesses, fitness)  
+    # state_vectors = np.append(state_vectors, state_vector)  
 
     return fitnesses, state_vectors
 
-def crossover_T_vec(agent_v_vector):
-    CR_r = np.random.random(size=agent_v_vector.size)
+def crossover_T_vec(agent_v, student_agent):
+    # input("Press Enter to continue...")
+    CR_r = np.random.random(size=agent_v.size)
+    print("CR_r: ", CR_r)
+    print("agent_vsize: ", agent_v.size)
     agent_T =np.array([])
+    for i in np.arange(0,agent_v.size):
+        if CR_r[i] < 0.8:
+            print("x_value",agent_v[0][i])
+            agent_T = np.append(agent_T, agent_v[0][i])
+        else:
+            print("y_value",student_agent[i])
+            agent_T = np.append(agent_T, student_agent[i])
     return agent_T
+
+def check_optimization_completion(fitnesses):
+    if np.min(fitnesses) < 10:
+        idx_best_fitness = np.argmin(fitnesses)
+        return True, idx_best_fitness
+    else:
+        return False, None
 
 'All of these only need to run once per spline'
 track = get_random_track(debug_info=False)
@@ -247,6 +272,7 @@ start_all_time = time.perf_counter()
 time_mv = np.array([])
 
 # for i in np.arange(0,NUM_ANCHORS.size):
+best_of_all = np.array([])
 for i in np.arange(0,1):
     print(f"Processing {NUM_ANCHORS[i]} anchors")
 
@@ -255,34 +281,84 @@ for i in np.arange(0,1):
     
     fig, ax = plt.subplots()
     ax.axis('equal')
+    ax.grid()
     plot_spline_2d(s1, ax=ax,dots_per_second=30)
+    plt.title(f"Track with {NUM_ANCHORS[i]} anchors")
     plt.ion()
     plt.show()
     'The anchors wouldn\'t need to be regenerated, they are defined by the agent itself.'
     'First generation should have some amount of randomness, otherwise it\'s a bit pointless.'
 
-    Agents_list, Agent_state_vectors = create_multiple_agents(NUM_ANCHORS[i], s1, g, polys, boxes, circle_radius, distance_interpolator,total_track_length)
+    Agents_list_fitnesses, Agent_state_vectors = create_multiple_agents(NUM_ANCHORS[i], s1, g, polys, boxes, circle_radius, distance_interpolator,total_track_length)
+    print("Agent :state vectors: ", Agent_state_vectors)
+    'Reshaping the state vectors to be a 2x11 array'
+    Dim = int(Agent_state_vectors.size/(NUM_ANCHORS[i]))
 
-    'Creating a neu agent T  for every existing agent A, by mutating the state vector of A'
-
-    for j in np.arange(0,Agents_list.size):
-        print(f"Processing agent {j} of {NUM_ANCHORS[i]} anchors")
-        helper_agents = np.copy(Agent_state_vectors)
-        helper_agents = np.delete(helper_agents, j)
-        help_3 = np.array([])
-        for k in range(3):
-            idx = np.random.randint(0,helper_agents.size) 
-            help_3 = np.append(help_3, helper_agents[idx])
-            helper_agents =np.delete(helper_agents, idx)
-            print("size:", helper_agents.size)
+    Agent_state_vectors = np.reshape(Agent_state_vectors, (-1,NUM_ANCHORS[i],2))
+    print("Agent :state vectors reshaped: ", Agent_state_vectors)
 
 
-        input("blah")
-        agent_V_state_vector = np.array([help_3[0] + F_VAR*(help_3[1]-help_3[2])])
-        agent_T_state_ = crossover_T_vec(agent_V_state_vector)
+    input("Press Enter to continue...")
+    while (optimization_completed == False):
+        input("Optimization in progress... \n Press Enter to continue...")
+        # for j in np.arange(0,Agents_list.size):
+        for j in np.arange(0,3):
+            input("agent processing... \n Press Enter to continue...")
+            print(f"Processing agent {j} of {NUM_ANCHORS[i]} anchors\n")
+            cur_fitness = Agents_list_fitnesses[j]
+            cur_agent = Agent_state_vectors[j]                          # An Agent is a group of anchors, which is a 2D array of size (NUM_ANCHORS[i],2)
+            print("Current agent: ", cur_agent)
 
+            for k in np.arange(0,NUM_ANCHORS[i]):
+                print(f"Processing anchor {k} of {NUM_ANCHORS[i]} anchors\n")
+                student_agent = cur_agent[k]                          # A student agent is an anchor point that is being optimized, which is a 2D array of size (NUM_ANCHORS[i],2)
+                # print("Current student agent: ", student_agent)
+                helper_agents = np.copy(cur_agent)
+                helper_agents = np.delete(helper_agents, k, axis=0)                 # The helper agents are the other anchor points that are not being optimized, which is a 2D array of size (NUM_ANCHORS[i]-1,2)
+                # print("Helper agents: ", helper_agents)
+                # print("Size of helper agents: ", helper_agents.size)
+                help_3 = np.array([])
+                for l in range(3):
+                    idx = np.random.randint(0,10-(l+1)) 
+                    help_3 = np.append(help_3, helper_agents[idx,:])
+                    # print("Helper agent: ", help_3)
+                    helper_agents =np.delete(helper_agents, idx, axis=0)
+                    # print("size:", helper_agents.size)
+                help_3 = np.reshape(help_3, (-1,2))
+                print("Helper agents reshaped: ", help_3)
+                agent_v = np.array([help_3[0] + F_VAR*(help_3[1]-help_3[2])])
+                print("Agent V: ", agent_v)
 
+                agent_t = crossover_T_vec(agent_v, student_agent)
+                print("Agent T: ", agent_t)
+                'Testing the fitness of the new student agent, if it is better than the current one, it will replace it in the agent state vector'
+                new_anchor_points = np.copy(cur_agent)
+                new_anchor_points[k] = agent_t
+                new_fitness = get_fitness(mo_function(s1, g, polys, boxes,new_anchor_points, circle_radius), distance_interpolator, s1)
+                if new_fitness < cur_fitness:
+                    print("New fitness is better than current fitness\n")
+                    Agents_list_fitnesses[j] = new_fitness
+                    Agent_state_vectors[j] = new_anchor_points
+                else:
+                    print("New fitness is worse than current fitness\n")
+                
+                # t_fitness = get_fitness( agent_t , distance_interpolator, s1)
+                # print("Fitness of Agent T: ", t_fitness)
+                # if t_fitness < Agents_list_fitnesses[j]:
+                #     print("Agent T is better than Agent A")
+                #     Agents_list_fitnesses[j] = t_fitness
+                #     Agent_state_vectors[j] = agent_t
+                # else:
+                #     print("Agent T is worse than Agent A")
+        
+            optimization_completed, idx_best_fitness = check_optimization_completion(Agents_list_fitnesses)
+    optimization_completed=input("Optimization completed for all agents \n 1 for yes, 0 for no: ")        
 
+    print("Optimization completed for ", NUM_ANCHORS[i], " anchors")
+    print("Best fitness: ", Agents_list_fitnesses[idx_best_fitness])
+    print("The best agent is: ", Agent_state_vectors[idx_best_fitness])
+    best_of_all = np.append(best_of_all, [Agent_state_vectors[idx_best_fitness],Agents_list_fitnesses[idx_best_fitness], NUM_ANCHORS[i]])
+    print("\n continue to next number of anchors")
 
 
     end_mv = time.perf_counter()
@@ -291,9 +367,9 @@ for i in np.arange(0,1):
 end_all_time = time.perf_counter()
 print("Total time for all anchors: ", end_all_time - start_all_time)
 
-print("Fitnesses: ", Agents_list)
-print("Best fitness: ", np.min(Agents_list))
-print("number of anchors for best fitness: ")
+print("Best agent: ", best_of_all[0])
+print("Best fitness: ", best_of_all[1])
+print("number of anchors for best fitness: ", best_of_all[2])
 
 print(end_mv - start_mv)
 input("Press Enter to continue...")
