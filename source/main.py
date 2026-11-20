@@ -1,3 +1,5 @@
+from timeit import main
+
 import numpy as np
 import scipy as sp
 from scipy.optimize import minimize
@@ -11,6 +13,7 @@ from helper import plot_spline_2d
 import random
 from numpy import pi as PI
 import time
+import sys
 
 start = time.perf_counter() # starting with a Timestamp to measure the time it takes to run the code
 
@@ -28,7 +31,11 @@ FITNESS_EPSILON = 1e-2      # Arbitrary Epsilon-factor to shift intersections to
                             # fitness consideration
 
 DEBUGGING_EVALUATE = False          # Boolean to turn on/off printing of debugging information for the evaluate-function
-
+F_VAR = 0.4
+MAX_GEN = 100
+TARGET = 10
+CR = 0.7
+rng = np.random.default_rng(42)
 circle_radius = np.sqrt(MAX_CONNECTOR_LENGTH**2 - TRACK_HEIGHT**2)
 
 '''Defining functions'''
@@ -193,54 +200,170 @@ def circle_crossings(g, polys, boxes, center, radius, tol=1e-9):
                 times.append(g[i] + u * (g[i+1] - g[i]))
     return np.unique(np.round(times, 9))     # Doppelte an Segmentgrenzen entfernen
 
-def mo_function(spline, g, polys, boxes, anchor_points, circle_radius):
-    fig, ax = plt.subplots()
-    ax.axis('equal')
-    plot_spline_2d(spline, ax=ax,dots_per_second=30)
+def mo_function(spline, g, polys, boxes, anchor_points, circle_radius,plotten=False):
+    if plotten:
+        fig, ax = plt.subplots()
+        ax.grid()
+        ax.set_title(f"Track with {len(anchor_points)} anchors")
+        ax.axis('equal')
+        plot_spline_2d(spline, ax=ax,dots_per_second=30)
     all_crossing_times_mb = np.array([])
     
     for anchor_point in anchor_points:
+        
         crossing_times_mb = circle_crossings(g, polys, boxes, anchor_point, circle_radius)
         all_crossing_times_mb = np.append(all_crossing_times_mb, crossing_times_mb)
         crossing_points_mb = spline.evaluate(crossing_times_mb) if len(crossing_times_mb) else []
 
-        circle = plt.Circle((anchor_point[0],anchor_point[1]),circle_radius,color='g',fill=False)
-        ax.plot(anchor_point[0],anchor_point[1],'o')
-        
-        for point in crossing_points_mb:
-            #print(point)
-            x = point[0]
-            y = point[1]
-            ax.plot(x, y, 'o')
-        ax.add_patch(circle)
+        if plotten:
+            circle = plt.Circle((anchor_point[0],anchor_point[1]),circle_radius,color='g',fill=False)
+            ax.plot(anchor_point[0],anchor_point[1],'o')
+            for point in crossing_points_mb:
+                #print(point)
+                x = point[0]
+                y = point[1]
+                ax.plot(x, y, 'o')
+            ax.add_patch(circle)
     return all_crossing_times_mb
 
+def create_multiple_agents(anchor_number, s1, g, polys, boxes, circle_radius, distance_interpolator,total_track_length):
+    fitnesses = np.array([])
+    state_vectors = np.array([])
+    track_increments = total_track_length/anchor_number
+    while True:
+        # Initialize the array of anchor points
+        anchor_points = np.array([np.array(s1.evaluate(track_increments))])
+        random_anc_points = np.sort(np.random.uniform(s1.grid[0],s1.grid[-1],size=anchor_number))
+        anchor_points = np.asarray(s1.evaluate(random_anc_points))
+        # print("size Anchor points: ", anchor_points.size)
+        all_crossing_times = mo_function(s1, g, polys, boxes,anchor_points, circle_radius)
+        all_crossing_times = np.unique(all_crossing_times, sorted=True)
+        fitness = get_fitness(all_crossing_times, distance_interpolator, s1)
+        state_vector = np.ndarray.flatten(anchor_points)
+        state_vector = np.array(anchor_points)
+                
+        print("Fitness: ", fitness)
+        fitnesses = np.append(fitnesses, fitness)  
+        state_vectors = np.append(state_vectors, state_vector)  
+        if len(fitnesses) >= 30:
+            break
+        
+    return fitnesses, state_vectors
+
+def crossover_T_vec(agent_v, student_agent):
+    CR_r = np.random.random(size=agent_v.size)
+    # print("CR_r: ", CR_r)
+    agent_T =np.array([])
+    for i in np.arange(0,agent_v.size):
+        if CR_r[i] < 0.7:
+            agent_T = np.append(agent_T, agent_v[0][i])
+        else:
+            agent_T = np.append(agent_T, student_agent[i])
+    return agent_T
+
+def evaluate(anchor_points, s1, g, polys, boxes, circle_radius, distance_interpolator):
+    crossings = np.unique(mo_function(s1, g, polys, boxes, anchor_points, circle_radius))
+    return get_fitness(crossings, distance_interpolator, s1)
+
+def de_generation(pop, fit, F, CR, rng, lower, upper, s1, g, polys, boxes, circle_radius, distance_interpolator):
+    N, n, _ = pop.shape
+    for i in range(N):
+        others = [j for j in range(N) if j != i]
+        a, b, c = rng.choice(others, size=3, replace=False)
+
+        v = pop[a] + F * (pop[b] - pop[c])            # Mutation, Form (n, 2)
+
+        mask = rng.random((n, 2)) < CR                 # Crossover pro Komponente
+        mask[rng.integers(n), rng.integers(2)] = True  # mindestens eine aus v
+        trial = np.where(mask, v, pop[i])
+        trial = np.clip(trial, lower, upper)           # Grenzen
+
+        f_trial = evaluate(trial, s1, g, polys, boxes, circle_radius, distance_interpolator)
+        if f_trial <= fit[i]:                          # Selektion
+            pop[i] = trial
+            fit[i] = f_trial
+    return pop, fit
+
+def check_optimization_completion(fitnesses):
+    print("check_optimization_completion")
+    if np.min(fitnesses) < 10:
+        idx_best_fitness = np.argmin(fitnesses)
+        print("best idx: ", idx_best_fitness)
+        return True, idx_best_fitness
+    else:
+        return False, None
+
 'All of these only need to run once per spline'
-track = get_random_track(debug_info=False)
-s1 = splines.CatmullRom(track, endconditions='closed')
-total_track_length = s1.grid[-1] - s1.grid[0]
-distance_interpolator = get_distance_interpolator(s1)
-g, polys = segment_polynomials(s1)
-boxes = segment_boxes(polys)
-'Needs to be recalculated every time the number of anchors is changed (for now constant)'
-track_increments = total_track_length/NUM_ANCHORS
-
-while True:
-
-    'All of the following code is needed for the actual optimiziation, needs to run for every agent'
-    start_mv = time.perf_counter()
+def main():
+    track = get_random_track(debug_info=False)
+    s1 = splines.CatmullRom(track, endconditions='closed')
+    total_track_length = s1.grid[-1] - s1.grid[0]
+    distance_interpolator = get_distance_interpolator(s1)
+    g, polys = segment_polynomials(s1)
+    boxes = segment_boxes(polys)
+    lower = track.min(axis=0) - circle_radius   # Rahmen um die Strecke
+    upper = track.max(axis=0) + circle_radius
+    'Needs to be recalculated every time the number of anchors is changed (for now constant)'
+    start_all_time = time.perf_counter()
+    time_mv = np.array([])
     fig, ax = plt.subplots()
     ax.axis('equal')
+    ax.grid()
     plot_spline_2d(s1, ax=ax,dots_per_second=30)
-
+    plt.title(f"Track with {NUM_ANCHORS} anchors")
     plt.ion()
     plt.show()
+    best_of_all = np.array([])
+    for i in np.arange(0,NUM_ANCHORS.size):
+    # for i in np.arange(0,2):
+        print(f"Processing {NUM_ANCHORS[i]} anchors")
 
-    'The anchors wouldn\'t need to be regenerated, they are defined by the agent itself.'
-    'First generation should have some amount of randomness, otherwise it\'s a bit pointless.'
-    anchor_points = np.array([np.array(s1.evaluate(track_increments))])
-    for i in np.arange(2,NUM_ANCHORS+1):
-        anchor_points = np.append(anchor_points, np.array([s1.evaluate(i*track_increments)]),axis=0)
+
+        'All of the following code is needed for the actual optimiziation, needs to run for every agent'
+        start_mv = time.perf_counter()
+
+        'The anchors wouldn\'t need to be regenerated, they are defined by the agent itself.'
+        'First generation should have some amount of randomness, otherwise it\'s a bit pointless.'
+        Agents_list_fitnesses, Agent_state_vectors = create_multiple_agents(
+            NUM_ANCHORS[i], s1, g, polys, boxes, circle_radius, distance_interpolator, total_track_length)
+        Agent_state_vectors = np.reshape(Agent_state_vectors, (-1, NUM_ANCHORS[i], 2))
+
+        pop, fit = Agent_state_vectors, Agents_list_fitnesses
+
+        for gen in range(MAX_GEN):
+            pop, fit = de_generation(pop, fit, F=F_VAR, CR=CR, rng=rng, lower=lower, upper=upper,s1=s1, g=g, polys=polys, boxes=boxes, circle_radius=circle_radius, distance_interpolator=distance_interpolator)
+            print(f"Anker {NUM_ANCHORS[i]}, Generation {gen}: beste Fitness {fit.min():.3f}")
+            if fit.min() < TARGET:
+                break
+
+        Agent_state_vectors, Agents_list_fitnesses = pop, fit
+        idx_best_fitness = np.argmin(fit)
+
+        print("Optimization completed for ", NUM_ANCHORS[i], " anchors")
+        print("Best fitness: ", Agents_list_fitnesses[idx_best_fitness])
+        best_of_all = np.append(best_of_all, Agents_list_fitnesses[idx_best_fitness])
+        print("The best agent is: ", Agent_state_vectors[idx_best_fitness])
+        mo_function(s1, g, polys, boxes, Agent_state_vectors[idx_best_fitness], circle_radius, plotten=True)
+
+        print("\n continue to next number of anchors")
+
+        end_mv = time.perf_counter()
+        time_mv =np.append(time_mv, end_mv - start_mv)
+
+    end_all_time = time.perf_counter()
+    print("Total time for all anchors: ", end_all_time - start_all_time,'s')
+
+    for i in np.arange(0,NUM_ANCHORS.size):
+        print(f"{NUM_ANCHORS[i]} anchors best fitness is: ", best_of_all[i])
+
+    print("Best fitness: ", np.min(best_of_all))
+    min_idx = np.argmin(best_of_all)
+    print("Anchor number with best fitness: ", NUM_ANCHORS[min_idx])
+    print("Best fitness: ", np.max(best_of_all))
+    max_idx = np.argmax(best_of_all)
+    print("Anchor number with worst fitness: ", NUM_ANCHORS[max_idx])
+
+
 
     all_crossing_times = mo_function(s1, g, polys, boxes, anchor_points, circle_radius)
     all_crossing_times = np.unique(all_crossing_times, sorted=True)
@@ -248,4 +371,6 @@ while True:
     state_vector = np.ndarray.flatten(anchor_points)
     end_mv = time.perf_counter()
 
-    print(end_mv - start_mv)
+if __name__ == "__main__":
+    main()
+    input("Time to view plots.")
