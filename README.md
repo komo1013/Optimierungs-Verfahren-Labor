@@ -7,10 +7,10 @@
   Add your open source license, GitHub uses MIT license.
 -->
 
-# 2-D Splines Optimisation 
+# 2-D Splines Optimization 
 
 
-This repository contains a custom-built closed 2D track generator and an optimization algorithm. The primary goal is to determine the absolute minimum number of support pillars required to sustain the track—similar to roller coaster engineering. Both the track physics/geometry and the optimization logic are being built from scratch.
+This repository contains a custom-built closed 2D track generator and an optimization algorithm. The primary goal is to determine the absolute minimum number of support pillars required to sustain the track in the air - similar to roller coaster engineering. Both the track physics/geometry and the optimization logic are being built from scratch.
 
 </header>
 
