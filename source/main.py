@@ -184,6 +184,7 @@ def mo_function(spline, g, polys, boxes, anchor_points, circle_radius,plotten=Fa
     if plotten:
         fig, ax = plt.subplots()
         ax.grid()
+        ax.set_title(f"Track with {len(anchor_points)} anchors")
         ax.axis('equal')
         plot_spline_2d(spline, ax=ax,dots_per_second=30)
     all_crossing_times_mb = np.array([])
@@ -227,18 +228,6 @@ def create_multiple_agents(anchor_number, s1, g, polys, boxes, circle_radius, di
         if len(fitnesses) >= 30:
             break
         
-    # print("size Anchor points: ", anchor_points.size)
-    # anchor_points = np.append(anchor_points, np.array([s1.evaluate(track_increments)]),axis=0)   
-    # # print("Anchor points: ", anchor_points) 
-    # print("size Anchor points: ", anchor_points.size)
-    # all_crossing_times = mo_function(s1, g, polys, boxes,anchor_points, circle_radius)
-    # all_crossing_times = np.unique(all_crossing_times, sorted=True)
-    # fitness = get_fitness(all_crossing_times, distance_interpolator, s1)
-    # state_vector = np.ndarray.flatten(anchor_points)
-    # print("Fitness: ", fitness)
-    # fitnesses = np.append(fitnesses, fitness)  
-    # state_vectors = np.append(state_vectors, state_vector)  
-
     return fitnesses, state_vectors
 
 def crossover_T_vec(agent_v, student_agent):
@@ -334,15 +323,7 @@ def main():
         print("Best fitness: ", Agents_list_fitnesses[idx_best_fitness])
         best_of_all = np.append(best_of_all, Agents_list_fitnesses[idx_best_fitness])
         print("The best agent is: ", Agent_state_vectors[idx_best_fitness])
-        # best_of_all = np.append(best_of_all, [Agent_state_vectors[idx_best_fitness],Agents_list_fitnesses[idx_best_fitness], NUM_ANCHORS[i]])
-
-        # save_best_agent = input("Do you want to save the best agent? (y/n): ")
-        save_best_agent = "n"
-        if save_best_agent == "y":
-            np.savetxt(f"best_agent_anchors.npy", Agent_state_vectors[idx_best_fitness])
-            np.savetxt(f"best_fitness_anchors.npy", Agents_list_fitnesses[idx_best_fitness])
-            print("Best agent saved.")
-
+        mo_function(s1, g, polys, boxes, Agent_state_vectors[idx_best_fitness], circle_radius, plotten=True)
 
         print("\n continue to next number of anchors")
 
@@ -350,7 +331,8 @@ def main():
         time_mv =np.append(time_mv, end_mv - start_mv)
 
     end_all_time = time.perf_counter()
-    print("Total time for all anchors: ", end_all_time - start_all_time)
+    print("Total time for all anchors: ", end_all_time - start_all_time,'s')
+
     for i in np.arange(0,NUM_ANCHORS.size):
         print(f"{NUM_ANCHORS[i]} anchors best fitness is: ", best_of_all[i])
 
@@ -363,7 +345,8 @@ def main():
 
 
 
-    print("\nTime for this number of anchors: ", end_mv - start_mv)
+    print("\nTime for all number of anchors: ", end_mv - start_mv)
 
 if __name__ == "__main__":
     main()
+    input("Time to view plots.")
