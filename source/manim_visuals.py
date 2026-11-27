@@ -110,3 +110,20 @@ class LinearSpline(manim.Scene):
         self.add(line)
     def construct(self):
         self.place_points()
+
+class PointsOnEllipse(manim.Scene):
+    def construct(self):
+        num_points = 10
+        ellipse = manim.Ellipse(width=10, height=5)
+        self.add(ellipse)
+        angles = np.linspace(0, 2*PI, num_points, endpoint=False)
+        for i,angle in enumerate(angles):
+            point = manim.Circle(radius=0.05, color=BLUE, fill_opacity=0.8).move_to(ellipse.point_at_angle(angle))
+            self.add(point)
+            if(i == 3):
+                square = manim.Square(side_length=1, color=manim.YELLOW).move_to(point)
+                self.add(square)
+                shifted_point = ellipse.point_at_angle(angle) + [-0.4, 0.4, 0]
+                arrow = manim.Arrow(start=point, end=shifted_point, buff=0.07)
+                self.add(arrow)
+        

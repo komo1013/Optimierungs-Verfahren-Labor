@@ -23,7 +23,7 @@ MAX_DEVIATION = 10          # Twice the maximum deviation of random points in x 
 TRACK_HEIGHT = 3            # Height of the simulated track above the ground anchors
 MAX_CONNECTOR_LENGTH = 5    # Maximum allowed length for connections between ground anchors and points on the track
 EVALUATE_INTERVALS = 100    # Number of intervals used to approximate intersections between the spline and the connection-circle
-NUM_ANCHORS = 6             # Number of anchors to be used (will get removed later)
+NUM_ANCHORS = 3             # Number of anchors to be used (will get removed later)
 FITNESS_EPSILON = 1e-2      # Arbitrary Epsilon-factor to shift intersections to recognize distances inside anchors and remove those from
                             # fitness consideration
 
@@ -36,7 +36,7 @@ circle_radius = np.sqrt(MAX_CONNECTOR_LENGTH**2 - TRACK_HEIGHT**2)
 def get_random_track(debug_info = True, max_radius = MAX_RADIUS, min_radius = MIN_RADIUS, max_angle = MAX_ANGLE, max_knots = MAX_KNOTS, max_deviation = MAX_DEVIATION):
     vertices = np.array([[0,0]])
 
-    while len(vertices) < MAX_KNOTS:
+    while len(vertices) < max_knots:
         current_point = vertices[-1:]
         if(debug_info): print(current_point)
         dx = max_deviation*random.random()- max_deviation/2 #Generate random x and y deviaten to add onto the current point, centered on 0
@@ -61,14 +61,14 @@ def get_random_track(debug_info = True, max_radius = MAX_RADIUS, min_radius = MI
         segments_dotproduct = np.dot(previous_segment[0], next_segment[0])
         segments_lenproduct = np.linalg.vector_norm(previous_segment)*np.linalg.vector_norm(next_segment)
         theta = np.arccos(segments_dotproduct/segments_lenproduct)
-        if (MIN_RADIUS <= next_len <= MAX_RADIUS):
+        if (min_radius <= next_len <= max_radius):
             if(debug_info): print(next_len)
             if(debug_info): print("Vector length ok")
         else:
             if(debug_info): print(next_len)
             if(debug_info): print("Vector either too short or too long")
             continue
-        if (np.absolute(theta) < MAX_ANGLE):
+        if (np.absolute(theta) < max_angle):
             if(debug_info): print(theta)
             if(debug_info): print("Angle ok")
         else:
@@ -136,8 +136,8 @@ def get_fitness(intersections, interpolator, spline, anchor_points):
                     break
             if (not inside_anchor):
                 distances = np.append(distances, lap_distance)
-            
-        shifted_time = intersections[i] + lap_distance*FITNESS_EPSILON
+        distance = s_point - s_points[i]
+        shifted_time = intersections[i] + distance*FITNESS_EPSILON
         shifted_point = spline.evaluate(shifted_time)
         inside_anchor = False
         for anchor_point in anchor_points:
@@ -146,7 +146,7 @@ def get_fitness(intersections, interpolator, spline, anchor_points):
                 inside_anchor = True
                 break
         if(not inside_anchor):
-            distances = np.append(distances, s_point - s_points[i])
+            distances = np.append(distances, distance)
 
         
     fitness = distances[np.argmax(distances)]
@@ -217,6 +217,8 @@ def mo_function(spline, g, polys, boxes, anchor_points, circle_radius):
 
 'All of these only need to run once per spline'
 track = get_random_track(debug_info=False)
+'Custom track for presentation'
+#track = np.array([[0,0.5],[4, 2], [3,5], [1, 6], [0, 8], [2, 9], [5, 7.5], [6.5, 9.5], [3,12], [-1, 14], [-4, 13], [-4.5, 11], [-6.5, 9.5], [-6.5, 6.5], [-5, 4.5], [-4, 2]])
 s1 = splines.CatmullRom(track, endconditions='closed')
 total_track_length = s1.grid[-1] - s1.grid[0]
 distance_interpolator = get_distance_interpolator(s1)
@@ -242,8 +244,19 @@ while True:
     for i in np.arange(2,NUM_ANCHORS+1):
         anchor_points = np.append(anchor_points, np.array([s1.evaluate(i*track_increments)]),axis=0)
 
+    #Visualization: Showing the anchors and the maximum connection radius on the spline
+    
+    '''for anchor in anchor_points:
+        circle = plt.Circle((anchor[0],anchor[1]),circle_radius,color='g',fill=False)
+        plt.plot(anchor[0], anchor[1],'o', color='orange')
+        ax.add_patch(circle)
+    plt.show()'''
     all_crossing_times = mo_function(s1, g, polys, boxes, anchor_points, circle_radius)
     all_crossing_times = np.unique(all_crossing_times, sorted=True)
+    # Visualization: Showing the crossing points
+    '''for t in all_crossing_times:
+        point = s1.evaluate(t)
+        plt.plot(point[0], point[1], 'o')'''
     fitness = get_fitness(all_crossing_times, distance_interpolator, s1, anchor_points)
     state_vector = np.ndarray.flatten(anchor_points)
     end_mv = time.perf_counter()
