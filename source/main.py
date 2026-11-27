@@ -26,13 +26,13 @@ MAX_DEVIATION = 10          # Twice the maximum deviation of random points in x 
 TRACK_HEIGHT = 3            # Height of the simulated track above the ground anchors
 MAX_CONNECTOR_LENGTH = 5    # Maximum allowed length for connections between ground anchors and points on the track
 EVALUATE_INTERVALS = 100    # Number of intervals used to approximate intersections between the spline and the connection-circle
-NUM_ANCHORS = 6             # Number of anchors to be used (will get removed later)
+NUM_ANCHORS = np.array([7,6,5,4,3,2,1])             # Number of anchors to be used (will get removed later)
 FITNESS_EPSILON = 1e-2      # Arbitrary Epsilon-factor to shift intersections to recognize distances inside anchors and remove those from
                             # fitness consideration
 
 DEBUGGING_EVALUATE = False          # Boolean to turn on/off printing of debugging information for the evaluate-function
 F_VAR = 0.4
-MAX_GEN = 100
+MAX_GEN = 400
 TARGET = 10
 CR = 0.7
 rng = np.random.default_rng(42)
@@ -43,7 +43,7 @@ circle_radius = np.sqrt(MAX_CONNECTOR_LENGTH**2 - TRACK_HEIGHT**2)
 def get_random_track(debug_info = True, max_radius = MAX_RADIUS, min_radius = MIN_RADIUS, max_angle = MAX_ANGLE, max_knots = MAX_KNOTS, max_deviation = MAX_DEVIATION):
     vertices = np.array([[0,0]])
 
-    while len(vertices) < MAX_KNOTS:
+    while len(vertices) < max_knots:
         current_point = vertices[-1:]
         if(debug_info): print(current_point)
         dx = max_deviation*random.random()- max_deviation/2 #Generate random x and y deviaten to add onto the current point, centered on 0
@@ -68,14 +68,14 @@ def get_random_track(debug_info = True, max_radius = MAX_RADIUS, min_radius = MI
         segments_dotproduct = np.dot(previous_segment[0], next_segment[0])
         segments_lenproduct = np.linalg.vector_norm(previous_segment)*np.linalg.vector_norm(next_segment)
         theta = np.arccos(segments_dotproduct/segments_lenproduct)
-        if (MIN_RADIUS <= next_len <= MAX_RADIUS):
+        if (min_radius <= next_len <= max_radius):
             if(debug_info): print(next_len)
             if(debug_info): print("Vector length ok")
         else:
             if(debug_info): print(next_len)
             if(debug_info): print("Vector either too short or too long")
             continue
-        if (np.absolute(theta) < MAX_ANGLE):
+        if (np.absolute(theta) < max_angle):
             if(debug_info): print(theta)
             if(debug_info): print("Angle ok")
         else:
@@ -125,7 +125,7 @@ def get_distance_interpolator(spline, num_intervals = EVALUATE_INTERVALS):
 
     return time_to_distance 
 
-def get_fitness(intersections, interpolator, spline, anchor_points):
+def get_fitness(intersections, interpolator, spline, anchor_points, fitness_epsilon = FITNESS_EPSILON):
     s_points = np.array(interpolator(intersections))
     last_point = interpolator(spline.grid[-1])
     distances = np.array([])
@@ -133,7 +133,7 @@ def get_fitness(intersections, interpolator, spline, anchor_points):
         if s_point == s_points[-1]:
             remaining_distance = last_point - s_point
             lap_distance = remaining_distance + s_points[0]
-            shifted_time = intersections[i+1] + lap_distance*FITNESS_EPSILON
+            shifted_time = intersections[i+1] + remaining_distance*fitness_epsilon
             shifted_point = spline.evaluate(shifted_time)
             inside_anchor = False
             for anchor_point in anchor_points:
@@ -143,8 +143,9 @@ def get_fitness(intersections, interpolator, spline, anchor_points):
                     break
             if (not inside_anchor):
                 distances = np.append(distances, lap_distance)
-            
-        shifted_time = intersections[i] + lap_distance*FITNESS_EPSILON
+        
+        distance_along_spline = s_point - s_points[i]
+        shifted_time = intersections[i] + distance_along_spline*fitness_epsilon
         shifted_point = spline.evaluate(shifted_time)
         inside_anchor = False
         for anchor_point in anchor_points:
@@ -153,7 +154,7 @@ def get_fitness(intersections, interpolator, spline, anchor_points):
                 inside_anchor = True
                 break
         if(not inside_anchor):
-            distances = np.append(distances, s_point - s_points[i])
+            distances = np.append(distances, distance_along_spline)
 
         
     fitness = distances[np.argmax(distances)]
@@ -238,7 +239,7 @@ def create_multiple_agents(anchor_number, s1, g, polys, boxes, circle_radius, di
         # print("size Anchor points: ", anchor_points.size)
         all_crossing_times = mo_function(s1, g, polys, boxes,anchor_points, circle_radius)
         all_crossing_times = np.unique(all_crossing_times, sorted=True)
-        fitness = get_fitness(all_crossing_times, distance_interpolator, s1)
+        fitness = get_fitness(all_crossing_times, distance_interpolator, s1, anchor_points)
         state_vector = np.ndarray.flatten(anchor_points)
         state_vector = np.array(anchor_points)
                 
@@ -261,9 +262,9 @@ def crossover_T_vec(agent_v, student_agent):
             agent_T = np.append(agent_T, student_agent[i])
     return agent_T
 
-def evaluate(anchor_points, s1, g, polys, boxes, circle_radius, distance_interpolator):
+def evaluate_new_agent(anchor_points, s1, g, polys, boxes, circle_radius, distance_interpolator):
     crossings = np.unique(mo_function(s1, g, polys, boxes, anchor_points, circle_radius))
-    return get_fitness(crossings, distance_interpolator, s1)
+    return get_fitness(crossings, distance_interpolator, s1, anchor_points)
 
 def de_generation(pop, fit, F, CR, rng, lower, upper, s1, g, polys, boxes, circle_radius, distance_interpolator):
     N, n, _ = pop.shape
@@ -278,7 +279,7 @@ def de_generation(pop, fit, F, CR, rng, lower, upper, s1, g, polys, boxes, circl
         trial = np.where(mask, v, pop[i])
         trial = np.clip(trial, lower, upper)           # Grenzen
 
-        f_trial = evaluate(trial, s1, g, polys, boxes, circle_radius, distance_interpolator)
+        f_trial = evaluate_new_agent(trial, s1, g, polys, boxes, circle_radius, distance_interpolator)
         if f_trial <= fit[i]:                          # Selektion
             pop[i] = trial
             fit[i] = f_trial
@@ -317,7 +318,7 @@ def main():
     for i in np.arange(0,NUM_ANCHORS.size):
     # for i in np.arange(0,2):
         print(f"Processing {NUM_ANCHORS[i]} anchors")
-
+        hit_target = False
 
         'All of the following code is needed for the actual optimiziation, needs to run for every agent'
         start_mv = time.perf_counter()
@@ -331,9 +332,11 @@ def main():
         pop, fit = Agent_state_vectors, Agents_list_fitnesses
 
         for gen in range(MAX_GEN):
-            pop, fit = de_generation(pop, fit, F=F_VAR, CR=CR, rng=rng, lower=lower, upper=upper,s1=s1, g=g, polys=polys, boxes=boxes, circle_radius=circle_radius, distance_interpolator=distance_interpolator)
+            pop, fit = de_generation(pop, fit, F=F_VAR, CR=CR, rng=rng, lower=lower, upper=upper,s1=s1, g=g, polys=polys, 
+                                     boxes=boxes, circle_radius=circle_radius, distance_interpolator=distance_interpolator)
             print(f"Anker {NUM_ANCHORS[i]}, Generation {gen}: beste Fitness {fit.min():.3f}")
             if fit.min() < TARGET:
+                hit_target = True
                 break
 
         Agent_state_vectors, Agents_list_fitnesses = pop, fit
@@ -344,16 +347,18 @@ def main():
         best_of_all = np.append(best_of_all, Agents_list_fitnesses[idx_best_fitness])
         print("The best agent is: ", Agent_state_vectors[idx_best_fitness])
         mo_function(s1, g, polys, boxes, Agent_state_vectors[idx_best_fitness], circle_radius, plotten=True)
-
-        print("\n continue to next number of anchors")
-
-        end_mv = time.perf_counter()
-        time_mv =np.append(time_mv, end_mv - start_mv)
+        if hit_target:
+            print("\n continue to next number of anchors")
+            end_mv = time.perf_counter()
+            time_mv =np.append(time_mv, end_mv - start_mv)
+        else:
+            print("\n couldn't optimize below threshold, stopping")
+            break
 
     end_all_time = time.perf_counter()
     print("Total time for all anchors: ", end_all_time - start_all_time,'s')
 
-    for i in np.arange(0,NUM_ANCHORS.size):
+    for i in np.arange(0,best_of_all.size):
         print(f"{NUM_ANCHORS[i]} anchors best fitness is: ", best_of_all[i])
 
     print("Best fitness: ", np.min(best_of_all))
@@ -365,11 +370,11 @@ def main():
 
 
 
-    all_crossing_times = mo_function(s1, g, polys, boxes, anchor_points, circle_radius)
-    all_crossing_times = np.unique(all_crossing_times, sorted=True)
-    fitness = get_fitness(all_crossing_times, distance_interpolator, s1, anchor_points)
-    state_vector = np.ndarray.flatten(anchor_points)
-    end_mv = time.perf_counter()
+    # all_crossing_times = mo_function(s1, g, polys, boxes, anchor_points, circle_radius)
+    # all_crossing_times = np.unique(all_crossing_times, sorted=True)
+    # fitness = get_fitness(all_crossing_times, distance_interpolator, s1, anchor_points)
+    # state_vector = np.ndarray.flatten(anchor_points)
+    # end_mv = time.perf_counter()
 
 if __name__ == "__main__":
     main()
