@@ -29,6 +29,7 @@ EVALUATE_INTERVALS = 100    # Number of intervals used to approximate intersecti
 NUM_ANCHORS = np.array([7,6,5,4,3,2,1])             # Number of anchors to be used (will get removed later)
 FITNESS_EPSILON = 1e-2      # Arbitrary Epsilon-factor to shift intersections to recognize distances inside anchors and remove those from
                             # fitness consideration
+INFINITY = 1e99
 
 DEBUGGING_EVALUATE = False          # Boolean to turn on/off printing of debugging information for the evaluate-function
 F_VAR = 0.4
@@ -156,8 +157,11 @@ def get_fitness(intersections, interpolator, spline, anchor_points, fitness_epsi
         if(not inside_anchor):
             distances = np.append(distances, distance_along_spline)
 
-        
-    fitness = distances[np.argmax(distances)]
+    if(distances.size == 0):
+        fitness = INFINITY
+        print("Zero distances found, please investigate\n")
+    else:
+        fitness = distances[np.argmax(distances)]
     return fitness
 
 def segment_polynomials(spline):
@@ -218,12 +222,12 @@ def mo_function(spline, g, polys, boxes, anchor_points, circle_radius,plotten=Fa
 
         if plotten:
             circle = plt.Circle((anchor_point[0],anchor_point[1]),circle_radius,color='g',fill=False)
-            ax.plot(anchor_point[0],anchor_point[1],'o')
+            ax.plot(anchor_point[0],anchor_point[1],'o', color='y')
             for point in crossing_points_mb:
                 #print(point)
                 x = point[0]
                 y = point[1]
-                ax.plot(x, y, 'o')
+                ax.plot(x, y, 'o', color="r")
             ax.add_patch(circle)
     return all_crossing_times_mb
 
